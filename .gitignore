@@ -1,0 +1,28 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets
+.env
+
+# Generated artifacts
+.cache/
+data/
+results/
+*.log
+
+# Local run state (prefect pid/log)
+.run/
+
+# macOS
+.DS_Store
+
+# Spotlight no-index marker
+.metadata_never_index

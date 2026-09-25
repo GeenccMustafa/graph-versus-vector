@@ -1,0 +1,17 @@
+[
+  {
+    "question": "Which rocket did the Apollo program use, and who led its design?",
+    "answer": "Saturn V, led by Wernher von Braun",
+    "supporting_titles": ["Apollo Program", "Saturn V"]
+  },
+  {
+    "question": "Which company built the Space Launch System used by Artemis I?",
+    "answer": "Boeing",
+    "supporting_titles": ["Artemis Program"]
+  },
+  {
+    "question": "Did the Apollo program and the Artemis program use the same rocket?",
+    "answer": "No",
+    "supporting_titles": ["Apollo Program", "Artemis Program"]
+  }
+]
