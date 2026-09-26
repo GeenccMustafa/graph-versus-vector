@@ -144,7 +144,9 @@ as `NEO4J_PASSWORD` in `.env`).
 ```bash
 cp .env.example .env
 # edit .env: DEEPINFRA_API_KEY, NEO4J_PASSWORD, model names, and optionally
-# LANGFUSE_* / DEEPEVAL_* (see Integrations)
+# LANGFUSE_* / DEEPEVAL_* (see Integrations).
+# If you use `make up` / `make langfuse` (Docker), also fill the self-hosted
+# stack vars listed at the bottom of .env.example.
 ```
 
 ### 3. Install
