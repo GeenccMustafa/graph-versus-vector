@@ -60,8 +60,8 @@ uv run --no-sync prefect config set PREFECT_API_URL="$PREFECT_URL" >/dev/null 2>
 
 echo
 echo "===================== Services ====================="
-echo "  Neo4j      http://localhost:7474   (neo4j / )"
-echo "  Langfuse   http://localhost:3000   (demo@example.com / )"
+echo "  Neo4j      http://localhost:7474   (credentials in .env)"
+echo "  Langfuse   http://localhost:3000   (credentials in .env)"
 echo "  Prefect    http://127.0.0.1:4200"
 echo "===================================================="
 echo "Stop everything with: make down"

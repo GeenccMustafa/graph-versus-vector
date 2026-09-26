@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # Install and start Neo4j locally via Homebrew (macOS), and set the password
-# used by this project's .env.
+# used by this project's .env. The password must be supplied as the first
+# argument or via the NEO4J_PASSWORD environment variable; no default is stored.
 set -euo pipefail
 
-PASSWORD="${1:-}"
+PASSWORD="${1:-${NEO4J_PASSWORD:-}}"
+if [[ -z "$PASSWORD" ]]; then
+  echo "Usage: bash scripts/setup_neo4j.sh <password>  (or set NEO4J_PASSWORD)" >&2
+  exit 1
+fi
 
 if ! command -v brew >/dev/null 2>&1; then
   echo "Homebrew is required: https://brew.sh" >&2
@@ -25,7 +30,7 @@ brew services start neo4j
 echo "Waiting for Neo4j Bolt (7687) ..."
 for _ in $(seq 1 60); do
   if nc -z localhost 7687 2>/dev/null; then
-    echo "Neo4j is up. Browser: http://localhost:7474  user: neo4j  password: $PASSWORD"
+    echo "Neo4j is up. Browser: http://localhost:7474  (user: neo4j, password: the one you set)"
     exit 0
   fi
   sleep 1

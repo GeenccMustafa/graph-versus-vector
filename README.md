@@ -118,23 +118,26 @@ Vector indexes: `chunk_embeddings`, `entity_embeddings`, `community_embeddings`.
 
 ```bash
 brew install neo4j
-neo4j-admin dbms set-initial-password 
+neo4j-admin dbms set-initial-password "<your-password>"
 brew services start neo4j
 ```
 
-Or use the helper script:
+Or use the helper script (pass your password as the argument, or export
+`NEO4J_PASSWORD` first):
 
 ```bash
-bash scripts/setup_neo4j.sh 
+bash scripts/setup_neo4j.sh "<your-password>"
 ```
 
 **Option B — Docker:**
 
 ```bash
+# Set NEO4J_PASSWORD in .env first (docker compose reads it from there).
 docker compose up -d
 ```
 
-Verify: open **http://localhost:7474** (user `neo4j`, password ``).
+Verify: open **http://localhost:7474** (user `neo4j`, password: the one you set
+as `NEO4J_PASSWORD` in `.env`).
 
 ### 2. Environment
 
@@ -171,8 +174,8 @@ It starts each service, waits for it to answer, and prints the URLs:
 
 ```
 ===================== Services =====================
-  Neo4j      http://localhost:7474   (neo4j / )
-  Langfuse   http://localhost:3000   (demo@example.com / )
+  Neo4j      http://localhost:7474   (credentials in .env)
+  Langfuse   http://localhost:3000   (credentials in .env)
   Prefect    http://127.0.0.1:4200
 ====================================================
 ```
@@ -344,17 +347,19 @@ it over HTTPS. Two options:
 
 **Option A — self-hosted locally (Docker).** Requires Docker Desktop (or colima).
 The bundled `docker-compose.langfuse.yml` runs the full Langfuse v4 stack
-(Postgres + ClickHouse + Redis + MinIO) and auto-creates a project with fixed
-dev keys, so there is no signup:
+(Postgres + ClickHouse + Redis + MinIO) and auto-creates a project, so there is
+no signup. All credentials come from the gitignored `.env` (no secrets are stored
+in the compose file), so set them before starting:
 
 ```bash
-make langfuse            # docker compose -f docker-compose.langfuse.yml up -d
-# UI: http://localhost:3000   (login demo@example.com / )
+cp .env.example .env
+# fill in LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY (any local values) and the
+# stack vars: POSTGRES_PASSWORD, NEXTAUTH_SECRET, SALT, ENCRYPTION_KEY,
+# CLICKHOUSE_PASSWORD, REDIS_AUTH, MINIO_ROOT_PASSWORD,
+# LANGFUSE_INIT_USER_EMAIL, LANGFUSE_INIT_USER_PASSWORD.
 
-# .env is already wired to it:
-#   LANGFUSE_PUBLIC_KEY=
-#   LANGFUSE_SECRET_KEY=
-#   LANGFUSE_HOST=http://localhost:3000
+make langfuse            # docker compose -f docker-compose.langfuse.yml up -d
+# UI: http://localhost:3000   (login with LANGFUSE_INIT_USER_EMAIL/PASSWORD)
 
 make config              # should show "langfuse tracing: enabled"
 make ask Q="..."         # any command now emits traces

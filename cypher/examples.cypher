@@ -1,5 +1,5 @@
 // Example Cypher queries for exploring the GraphRAG knowledge graph.
-// Open Neo4j Browser at http://localhost:7474  (neo4j / )
+// Open Neo4j Browser at http://localhost:7474  (user: neo4j, password from .env)
 // and paste any of these.
 
 // 1. Overall size of the graph
