@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def load_chunks(source: str | None = None, settings: Settings | None = None):
+    """Load the dataset and split it into chunks for both pipelines."""
     settings = settings or get_settings()
     documents, examples = load_dataset(settings, source=source)
     chunks = build_chunks(documents, settings.chunk_size, settings.chunk_overlap)
@@ -108,6 +109,7 @@ def run_comparison(
     graph.close()
 
     def delta(a: EvalSummary, b: EvalSummary) -> dict:
+        """Return metric-wise differences ``b - a`` excluding name and count."""
         ad, bd = a.as_dict(), b.as_dict()
         return {key: round(bd[key] - ad[key], 4) for key in ad if key not in {"name", "n"}}
 

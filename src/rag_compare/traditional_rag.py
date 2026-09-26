@@ -22,7 +22,10 @@ logger = logging.getLogger(__name__)
 
 
 class TraditionalRAG:
+    """Flat vector-RAG baseline: embed chunks, then cosine top-k retrieval."""
+
     def __init__(self, settings: Settings | None = None, llm: LLMClient | None = None):
+        """Bind the settings, LLM client and cache location for the index."""
         self.settings = settings or get_settings()
         self.llm = llm or LLMClient(self.settings)
         self.index = VectorIndex()
@@ -30,6 +33,7 @@ class TraditionalRAG:
 
     # ------------------------------------------------------------------ build
     def build(self, chunks: list[Chunk], *, force: bool = False) -> None:
+        """Embed ``chunks`` and persist the index, reusing a matching cache."""
         # Index per corpus fingerprint so switching corpora never reuses a
         # stale embedding matrix.
         self.store_dir = self.store_root / corpus_fingerprint(chunks)
@@ -50,6 +54,7 @@ class TraditionalRAG:
 
     # --------------------------------------------------------------- retrieve
     def retrieve(self, question: str, k: int | None = None) -> list[RetrievalItem]:
+        """Return the top-``k`` chunks for ``question`` by cosine similarity."""
         k = k or self.settings.top_k
         qvec = self.llm.embed_one(question)
         hits = self.index.search(qvec, k)
@@ -66,6 +71,7 @@ class TraditionalRAG:
 
     # ----------------------------------------------------------------- answer
     def answer(self, question: str, k: int | None = None) -> RAGResult:
+        """Answer ``question`` from the retrieved chunks and return the result."""
         t0 = time.perf_counter()
         with self.llm.tracer.span(
             "traditional_rag.answer", input=question

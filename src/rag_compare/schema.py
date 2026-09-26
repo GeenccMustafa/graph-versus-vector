@@ -26,6 +26,8 @@ class RetrievalItem:
 
 @dataclass
 class RAGResult:
+    """The answer, retrieved evidence and usage stats for one question."""
+
     question: str
     answer: str
     retrieval: list[RetrievalItem] = field(default_factory=list)
@@ -37,14 +39,17 @@ class RAGResult:
 
     @property
     def total_tokens(self) -> int:
+        """Return the combined prompt and completion token count."""
         return self.prompt_tokens + self.completion_tokens
 
     @property
     def context_text(self) -> str:
+        """Return the retrieved item texts joined into one context string."""
         return "\n\n".join(item.text for item in self.retrieval)
 
 
 def build_answer_messages(question: str, context: str) -> list[dict[str, str]]:
+    """Build the chat messages that answer ``question`` from ``context``."""
     user = (
         f"Context:\n{context}\n\n"
         f"Question: {question}\n\n"

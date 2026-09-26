@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ChatResult:
+    """The text and token usage returned by a chat completion."""
+
     text: str
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -38,10 +40,12 @@ class ChatResult:
 
     @property
     def total_tokens(self) -> int:
+        """Return the combined prompt and completion token count."""
         return self.prompt_tokens + self.completion_tokens
 
 
 def _hash(payload: Any) -> str:
+    """Return a stable SHA-256 hex digest of a JSON-serialisable payload."""
     blob = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()
 
@@ -50,26 +54,33 @@ class DiskCache:
     """Tiny JSON/NumPy cache keyed by a content hash."""
 
     def __init__(self, root: Path):
+        """Create the cache rooted at ``root``, creating the directory if needed."""
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _path(self, kind: str, key: str) -> Path:
+        """Return (creating if needed) the cache file path for a key."""
         sub = self.root / kind
         sub.mkdir(parents=True, exist_ok=True)
         return sub / f"{key}.json"
 
     def get(self, kind: str, key: str):
+        """Return the cached JSON value for ``key``, or ``None`` on a miss."""
         path = self._path(kind, key)
         if path.exists():
             return json.loads(path.read_text())
         return None
 
     def put(self, kind: str, key: str, value) -> None:
+        """Write ``value`` as JSON under the given cache kind and key."""
         self._path(kind, key).write_text(json.dumps(value))
 
 
 class LLMClient:
+    """Chat and embedding client for an OpenAI-compatible provider, with caching."""
+
     def __init__(self, settings: Settings | None = None):
+        """Create the OpenAI-compatible client, cache and tracer."""
         self.settings = settings or get_settings()
         if not self.settings.deepinfra_api_key:
             raise RuntimeError(
@@ -97,6 +108,7 @@ class LLMClient:
         max_tokens: int,
         json_mode: bool,
     ):
+        """Call the provider's chat endpoint with retries on failure."""
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -117,6 +129,7 @@ class LLMClient:
         json_mode: bool = False,
         cache: bool = True,
     ) -> ChatResult:
+        """Return a chat completion, serving from and writing to the disk cache."""
         model = model or self.settings.llm_model
         key = _hash(
             {
@@ -227,6 +240,7 @@ class LLMClient:
         reraise=True,
     )
     def _embed_raw(self, texts: list[str]) -> list[list[float]]:
+        """Call the provider's embeddings endpoint with retries on failure."""
         resp = self.client.embeddings.create(
             model=self.settings.embedding_model, input=texts
         )
@@ -234,6 +248,7 @@ class LLMClient:
         return [d.embedding for d in resp.data]
 
     def embed_one(self, text: str) -> np.ndarray:
+        """Return the embedding vector for a single string."""
         return self.embed([text])[0]
 
     # ------------------------------------------------------------- json helper
@@ -257,6 +272,7 @@ class LLMClient:
 
 
 def _parse_json(text: str) -> Any:
+    """Parse JSON from model output, tolerating code fences and prose wrappers."""
     text = text.strip()
     if text.startswith("```"):
         text = text.split("```", 2)[1]

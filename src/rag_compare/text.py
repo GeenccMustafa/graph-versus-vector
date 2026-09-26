@@ -11,12 +11,15 @@ from .data import Document
 
 @dataclass
 class Chunk:
+    """A retrievable slice of a source document."""
+
     chunk_id: str
     doc_id: str
     title: str
     text: str
 
     def render(self) -> str:
+        """Return the chunk as title-prefixed text for embedding or prompting."""
         return f"[{self.title}] {self.text}"
 
 
@@ -24,6 +27,7 @@ _SENT_RE = re.compile(r"(?<=[.!?])\s+")
 
 
 def _split_sentences(text: str) -> list[str]:
+    """Split ``text`` into sentences on terminal punctuation."""
     parts = [p.strip() for p in _SENT_RE.split(text) if p.strip()]
     return parts or [text.strip()]
 
@@ -70,6 +74,7 @@ def corpus_fingerprint(chunks: list[Chunk]) -> str:
 
 
 def build_chunks(documents: list[Document], size: int, overlap: int) -> list[Chunk]:
+    """Split ``documents`` into sentence-aware, overlapping chunks."""
     chunks: list[Chunk] = []
     for doc in documents:
         pieces = chunk_text(doc.text, size, overlap)

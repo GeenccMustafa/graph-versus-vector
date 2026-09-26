@@ -99,14 +99,17 @@ class Settings(BaseSettings):
 
     @property
     def cache_enabled(self) -> bool:
+        """Return whether on-disk response caching is active (always true)."""
         return True
 
     @property
     def extractor_model(self) -> str:
+        """Return the model used for extraction, falling back to the chat model."""
         return self.extraction_model or self.llm_model
 
     @property
     def tracing_enabled(self) -> bool:
+        """Return whether Langfuse tracing has all required keys."""
         return bool(
             self.langfuse_enabled
             and self.langfuse_public_key
@@ -115,11 +118,13 @@ class Settings(BaseSettings):
 
     @property
     def deepeval_metric_list(self) -> list[str]:
+        """Return the configured DeepEval metric names as a list."""
         return [m.strip() for m in self.deepeval_metrics.split(",") if m.strip()]
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
+    """Return the process-wide cached :class:`Settings` and ensure dirs exist."""
     settings = Settings()  # type: ignore[call-arg]
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.cache_dir.mkdir(parents=True, exist_ok=True)

@@ -67,6 +67,7 @@ def summarize_community(
     *,
     model: str | None = None,
 ) -> str:
+    """Return an LLM-written summary report for one community."""
     name_set = set(entity_names)
     ent_lines = []
     for n in entity_names:

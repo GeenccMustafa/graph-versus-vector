@@ -48,6 +48,7 @@ SOURCE_OPTION = typer.Option(
 
 
 def _langfuse_status(s) -> str:
+    """Return a human-readable Langfuse tracing status for the config table."""
     if not s.tracing_enabled:
         return "disabled (no keys)"
     if langfuse_reachable(s.langfuse_host):
@@ -56,6 +57,7 @@ def _langfuse_status(s) -> str:
 
 
 def _load_chunks(source: str | None = None):
+    """Load dataset and chunks using the cached global settings."""
     settings = get_settings()
     documents, examples = load_dataset(settings, source=source)
     chunks = build_chunks(documents, settings.chunk_size, settings.chunk_overlap)
@@ -197,6 +199,7 @@ def evaluate(
 
 
 def _print_comparison(report: dict) -> None:
+    """Print the side-by-side comparison table for an evaluation report."""
     trad = report["results"]["traditional_rag"]
     graph = report["results"]["graph_rag"]
     rows = [

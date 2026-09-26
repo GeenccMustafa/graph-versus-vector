@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 @task(name="build-pipelines", retries=1, retry_delay_seconds=15)
 def build_task(source: str | None = None, force: bool = False) -> dict:
+    """Prefect task that builds both retrieval pipelines."""
     return build_all(source, force=force)
 
 
@@ -33,6 +34,7 @@ def build_task(source: str | None = None, force: bool = False) -> dict:
 def compare_task(
     limit: int | None = None, mode: str = "hybrid", source: str | None = None
 ) -> dict:
+    """Prefect task that runs the custom-metrics comparison."""
     return run_comparison(limit=limit, mode=mode, source=source)
 
 
@@ -40,6 +42,7 @@ def compare_task(
 def deepeval_task(
     limit: int | None = None, source: str | None = None, both: bool = True
 ) -> dict:
+    """Prefect task that runs the DeepEval LLM-as-judge metrics."""
     return run_deepeval(limit=limit, source=source, both=both)
 
 

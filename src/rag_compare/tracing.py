@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 
 def langfuse_reachable(host: str, timeout: float = 2.0) -> bool:
-    """True if a Langfuse server answers its health endpoint at ``host``."""
+    """Return whether a Langfuse server answers its health endpoint at ``host``."""
     if not host:
         return False
     try:
@@ -33,7 +33,10 @@ def langfuse_reachable(host: str, timeout: float = 2.0) -> bool:
 
 
 class Tracer:
+    """Langfuse tracing facade that degrades to no-ops when unconfigured."""
+
     def __init__(self, settings: Settings | None = None):
+        """Initialise the client if tracing is enabled and the host is reachable."""
         self.settings = settings or get_settings()
         self.client = None
         if not self.settings.tracing_enabled:
@@ -60,14 +63,17 @@ class Tracer:
             self.client = None
 
     def _host_reachable(self) -> bool:
+        """Return whether the configured Langfuse host answers its health check."""
         return langfuse_reachable(self.settings.langfuse_host)
 
     @property
     def enabled(self) -> bool:
+        """Return whether a live Langfuse client is attached."""
         return self.client is not None
 
     @contextmanager
     def span(self, name: str, **kwargs: Any) -> Iterator[Any]:
+        """Yield a Langfuse span context, or ``None`` when tracing is off."""
         if self.client is None:
             yield None
             return
@@ -84,6 +90,7 @@ class Tracer:
     def generation(
         self, name: str, *, model: str, input: Any = None, **kwargs: Any
     ) -> Iterator[Any]:
+        """Yield a Langfuse generation context, or ``None`` when tracing is off."""
         if self.client is None:
             yield None
             return
@@ -98,6 +105,7 @@ class Tracer:
 
     @contextmanager
     def embedding(self, name: str, *, model: str, input: Any = None, **kwargs: Any) -> Iterator[Any]:
+        """Yield a Langfuse embedding context, or ``None`` when tracing is off."""
         if self.client is None:
             yield None
             return
@@ -111,6 +119,7 @@ class Tracer:
             yield None
 
     def update(self, obs: Any, **kwargs: Any) -> None:
+        """Update a span/generation observation, ignoring no-op observers."""
         if obs is None:
             return
         try:
@@ -119,6 +128,7 @@ class Tracer:
             logger.debug("Langfuse update error: %s", exc)
 
     def score_current(self, name: str, value: float, comment: str | None = None) -> None:
+        """Attach a numeric score to the current trace."""
         if self.client is None:
             return
         try:
@@ -127,6 +137,7 @@ class Tracer:
             logger.debug("Langfuse score error: %s", exc)
 
     def flush(self) -> None:
+        """Flush any buffered events to Langfuse."""
         if self.client is None:
             return
         try:
@@ -139,6 +150,7 @@ _tracer: Tracer | None = None
 
 
 def get_tracer(settings: Settings | None = None) -> Tracer:
+    """Return the process-wide singleton :class:`Tracer`."""
     global _tracer
     if _tracer is None:
         _tracer = Tracer(settings)

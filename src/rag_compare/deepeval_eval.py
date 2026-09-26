@@ -40,13 +40,16 @@ class DeepInfraJudge(DeepEvalBaseLLM):
     """DeepEval judge backed by our DeepInfra (OpenAI-compatible) client."""
 
     def __init__(self, llm: LLMClient | None = None, settings: Settings | None = None):
+        """Bind the settings and the shared LLM client used for judging."""
         self.settings = settings or get_settings()
         self.llm = llm or LLMClient(self.settings)
 
-    def load_model(self):  # noqa: D102
+    def load_model(self):
+        """Return ``self``; DeepEval uses this to lazily initialise the model."""
         return self
 
-    def generate(self, prompt: str, schema=None, **kwargs):  # noqa: D102
+    def generate(self, prompt: str, schema=None, **kwargs):
+        """Generate a judge response, validating it against ``schema`` if given."""
         if schema is not None:
             data, _ = self.llm.chat_json(
                 [
@@ -78,10 +81,12 @@ class DeepInfraJudge(DeepEvalBaseLLM):
             [{"role": "user", "content": prompt}], max_tokens=1024
         ).text
 
-    async def a_generate(self, prompt: str, schema=None, **kwargs):  # noqa: D102
+    async def a_generate(self, prompt: str, schema=None, **kwargs):
+        """Asynchronous wrapper around :meth:`generate`."""
         return self.generate(prompt, schema=schema, **kwargs)
 
-    def get_model_name(self) -> str:  # noqa: D102
+    def get_model_name(self) -> str:
+        """Return the underlying model name, for reporting."""
         return self.settings.llm_model
 
 
@@ -97,6 +102,8 @@ METRIC_REGISTRY = {
 
 @dataclass
 class DeepevalRecord:
+    """One metric score for one question under one pipeline."""
+
     pipeline: str
     question: str
     metric: str
@@ -106,6 +113,7 @@ class DeepevalRecord:
 
 
 def build_test_case(question: str, result: RAGResult, expected: str) -> LLMTestCase:
+    """Convert a RAG result into a DeepEval LLM test case."""
     return LLMTestCase(
         input=question,
         actual_output=result.answer,

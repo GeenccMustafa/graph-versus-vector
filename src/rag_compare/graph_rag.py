@@ -47,13 +47,17 @@ COMMUNITY_INDEX = "community_embeddings"
 
 
 class GraphRAG:
+    """Knowledge-graph RAG over Neo4j with local, global and hybrid retrieval."""
+
     def __init__(self, settings: Settings | None = None, llm: LLMClient | None = None):
+        """Bind the settings and LLM client; the driver is opened lazily."""
         self.settings = settings or get_settings()
         self.llm = llm or LLMClient(self.settings)
         self.driver = None
 
     # ------------------------------------------------------------- connection
     def connect(self):
+        """Lazily open and verify the Neo4j driver, returning it."""
         if self.driver is None:
             self.driver = GraphDatabase.driver(
                 self.settings.neo4j_uri,
@@ -63,27 +67,33 @@ class GraphRAG:
         return self.driver
 
     def close(self) -> None:
+        """Close the Neo4j driver if one is open."""
         if self.driver is not None:
             self.driver.close()
             self.driver = None
 
     def __enter__(self):
+        """Enter a context that opens the Neo4j connection."""
         self.connect()
         return self
 
     def __exit__(self, *exc):
+        """Close the Neo4j connection on context exit."""
         self.close()
 
     def _run(self, cypher: str, **params):
+        """Execute a Cypher statement and return the first result set."""
         return self.driver.execute_query(
             cypher, params, database_=self.settings.neo4j_database
         )[0]
 
     def clear(self) -> None:
+        """Delete every node and relationship from the graph."""
         self._run("MATCH (n) DETACH DELETE n")
         logger.info("Cleared Neo4j graph")
 
     def counts(self) -> dict[str, int]:
+        """Return node and edge counts for the current graph."""
         rec = self._run(
             """
             RETURN
@@ -98,12 +108,14 @@ class GraphRAG:
 
     @property
     def is_built(self) -> bool:
+        """Return whether the graph contains any entities."""
         try:
             return self.counts()["entities"] > 0
         except Exception:
             return False
 
     def stored_fingerprint(self) -> str | None:
+        """Return the corpus fingerprint recorded in the graph, if any."""
         try:
             recs = self._run(
                 "MATCH (k:Corpus {id: 'default'}) RETURN k.fingerprint AS fp"
@@ -113,7 +125,7 @@ class GraphRAG:
             return None
 
     def matches(self, chunks: list[Chunk]) -> bool:
-        """True if the graph currently holds exactly this corpus."""
+        """Return whether the graph currently holds exactly this corpus."""
         return self.stored_fingerprint() == corpus_fingerprint(chunks)
 
     # ------------------------------------------------------------------ build
@@ -124,6 +136,7 @@ class GraphRAG:
         force: bool = False,
         corpus_key: str | None = None,
     ) -> None:
+        """Build the graph for ``chunks``, skipping work when it already matches."""
         self.connect()
         fingerprint = corpus_fingerprint(chunks)
         stored = self.stored_fingerprint()
@@ -161,6 +174,7 @@ class GraphRAG:
         )
 
     def _create_indexes(self) -> None:
+        """Create the vector and lookup indexes used by retrieval."""
         dim = self.settings.embedding_dim
         for index, label, prop in [
             (CHUNK_INDEX, "Chunk", "embedding"),
@@ -183,6 +197,7 @@ class GraphRAG:
             )
 
     def _write_chunks(self, chunks: list[Chunk], embeddings: np.ndarray) -> None:
+        """Merge chunks, their documents and embeddings into Neo4j."""
         rows = [
             {
                 "chunk_id": c.chunk_id,
@@ -238,6 +253,7 @@ class GraphRAG:
         return results
 
     def _extract_and_write(self, chunks: list[Chunk]) -> None:
+        """Extract, merge and persist entities, relationships and mentions."""
         entities: dict[str, Entity] = {}
         descriptions: dict[str, list[str]] = defaultdict(list)
         relationships: dict[tuple[str, str], Relationship] = {}
@@ -340,11 +356,13 @@ class GraphRAG:
         entity_by_name: dict[str, Entity],
         relationships: list[Relationship],
     ) -> list[dict]:
+        """Summarise and embed each community, returning row dicts to persist."""
         model = self.settings.extractor_model
         workers = max(1, self.settings.extraction_workers)
         indexed = [(i, members) for i, members in enumerate(communities) if members]
 
         def summarize(members: list[str]) -> str:
+            """Return the summary text for one community's member names."""
             return summarize_community(
                 self.llm, members, entity_by_name, relationships, model=model
             )
@@ -397,6 +415,7 @@ class GraphRAG:
         return rows
 
     def _build_communities(self) -> None:
+        """Detect entity communities, summarise them and write them to Neo4j."""
         recs = self._run(
             """
             MATCH (e:Entity)
@@ -458,6 +477,7 @@ class GraphRAG:
 
     # -------------------------------------------------------------- retrieval
     def _vector_search_entities(self, question: str, k: int) -> list[dict]:
+        """Return the ``k`` entities most similar to the question."""
         emb = self.llm.embed_one(question).tolist()
         recs = self._run(
             f"""
@@ -472,6 +492,7 @@ class GraphRAG:
         return [dict(r) for r in recs]
 
     def _vector_search_chunks(self, question: str, k: int) -> list[dict]:
+        """Return the ``k`` chunks most similar to the question."""
         emb = self.llm.embed_one(question).tolist()
         recs = self._run(
             f"""
@@ -485,6 +506,7 @@ class GraphRAG:
         return [dict(r) for r in recs]
 
     def _vector_search_communities(self, question: str, k: int) -> list[dict]:
+        """Return the ``k`` community summaries most similar to the question."""
         emb = self.llm.embed_one(question).tolist()
         recs = self._run(
             f"""
@@ -541,6 +563,7 @@ class GraphRAG:
         return list(entities.values()), facts
 
     def _chunks_for_entities(self, names: list[str], limit: int) -> list[dict]:
+        """Return chunk rows that mention any of the given entity names."""
         if not names:
             return []
         recs = self._run(
@@ -556,6 +579,7 @@ class GraphRAG:
         return [dict(r) for r in recs]
 
     def retrieve(self, question: str, *, mode: str = "hybrid", k: int | None = None):
+        """Retrieve graph evidence and facts for ``question`` in the given mode."""
         k = k or self.settings.top_k
         items: list[RetrievalItem] = []
         facts: list[str] = []
@@ -635,6 +659,7 @@ class GraphRAG:
         return items, facts
 
     def answer(self, question: str, *, mode: str = "hybrid", k: int | None = None) -> RAGResult:
+        """Answer ``question`` from graph retrieval and return the result."""
         t0 = time.perf_counter()
         with self.llm.tracer.span(
             "graph_rag.answer", input=question, metadata={"mode": mode}

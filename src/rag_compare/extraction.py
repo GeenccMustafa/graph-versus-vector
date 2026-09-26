@@ -18,33 +18,42 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class Entity:
+    """A named thing (person, organisation, place, work, ...) from a passage."""
+
     name: str
     type: str = "ENTITY"
     description: str = ""
 
     @property
     def normalized(self) -> str:
+        """Return the canonical, case-folded form of the entity name."""
         return normalize_name(self.name)
 
 
 @dataclass
 class Relationship:
+    """A directed, described edge between two entity names."""
+
     source: str
     target: str
     description: str = ""
 
     @property
     def key(self) -> tuple[str, str]:
+        """Return the normalised ``(source, target)`` pair used for merging."""
         return (normalize_name(self.source), normalize_name(self.target))
 
 
 @dataclass
 class Extraction:
+    """The entities and relationships pulled from a single chunk."""
+
     entities: list[Entity] = field(default_factory=list)
     relationships: list[Relationship] = field(default_factory=list)
 
 
 def normalize_name(name: str) -> str:
+    """Return a canonical key for an entity name (trimmed and case-folded)."""
     name = name.strip().strip(".")
     name = re.sub(r"\s+", " ", name)
     return name.casefold()
@@ -77,6 +86,7 @@ Passage:
 
 
 def extract_from_chunk(llm: LLMClient, passage: str, *, model: str | None = None) -> Extraction:
+    """Extract deduplicated entities and relationships from one passage."""
     messages = [
         {"role": "system", "content": EXTRACTION_SYSTEM},
         {"role": "user", "content": EXTRACTION_TEMPLATE.format(passage=passage)},

@@ -36,11 +36,14 @@ class Document:
     text: str
 
     def render(self) -> str:
+        """Return the passage as title-prefixed text for embedding."""
         return f"{self.title}\n{self.text}"
 
 
 @dataclass
 class QAExample:
+    """One benchmark question with its gold answer and supporting facts."""
+
     question: str
     answer: str
     qid: str = ""
@@ -51,12 +54,14 @@ class QAExample:
 
     @property
     def supporting_titles(self) -> set[str]:
+        """Return the set of distinct gold supporting passage titles."""
         return {t for t, _ in self.supporting}
 
 
 def _fetch_rows(
     dataset: str, config: str, split: str, offset: int, length: int
 ) -> list[dict]:
+    """Fetch one page of rows from the HuggingFace datasets-server API."""
     params = {
         "dataset": dataset,
         "config": config,
@@ -142,6 +147,7 @@ _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.*)$")
 
 
 def _read_text(path: Path) -> str:
+    """Read ``path`` as UTF-8, falling back to latin-1 on decode errors."""
     try:
         return path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
@@ -149,6 +155,7 @@ def _read_text(path: Path) -> str:
 
 
 def _title_for(path: Path, text: str) -> str:
+    """Return the first markdown heading in ``text``, else the file stem."""
     for line in text.splitlines():
         match = _HEADING_RE.match(line)
         if match:
