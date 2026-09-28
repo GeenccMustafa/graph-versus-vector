@@ -32,18 +32,24 @@ def build_task(source: str | None = None, force: bool = False) -> dict:
 
 @task(name="evaluate-comparison", retries=1, retry_delay_seconds=15)
 def compare_task(
-    limit: int | None = None, mode: str = "hybrid", source: str | None = None
+    limit: int | None = None,
+    mode: str = "hybrid",
+    retrieval: str = "dense",
+    source: str | None = None,
 ) -> dict:
     """Prefect task that runs the custom-metrics comparison."""
-    return run_comparison(limit=limit, mode=mode, source=source)
+    return run_comparison(limit=limit, mode=mode, retrieval=retrieval, source=source)
 
 
 @task(name="evaluate-deepeval", retries=1, retry_delay_seconds=15)
 def deepeval_task(
-    limit: int | None = None, source: str | None = None, both: bool = True
+    limit: int | None = None,
+    source: str | None = None,
+    both: bool = True,
+    retrieval: str = "dense",
 ) -> dict:
     """Prefect task that runs the DeepEval LLM-as-judge metrics."""
-    return run_deepeval(limit=limit, source=source, both=both)
+    return run_deepeval(limit=limit, source=source, both=both, retrieval=retrieval)
 
 
 @flow(name="rag-compare-build", log_prints=True)
@@ -56,10 +62,13 @@ def build_flow(source: str | None = None, force: bool = False) -> dict:
 
 @flow(name="rag-compare-evaluate", log_prints=True)
 def evaluate_flow(
-    limit: int | None = None, mode: str = "hybrid", source: str | None = None
+    limit: int | None = None,
+    mode: str = "hybrid",
+    retrieval: str = "dense",
+    source: str | None = None,
 ) -> dict:
     """Run the head-to-head comparison and print the summary."""
-    report = compare_task(limit=limit, mode=mode, source=source)
+    report = compare_task(limit=limit, mode=mode, retrieval=retrieval, source=source)
     results = report["results"]
     print("Traditional RAG:", results["traditional_rag"])
     print("GraphRAG:       ", results["graph_rag"])
@@ -68,10 +77,13 @@ def evaluate_flow(
 
 @flow(name="rag-compare-deepeval", log_prints=True)
 def deepeval_flow(
-    limit: int | None = None, source: str | None = None, both: bool = True
+    limit: int | None = None,
+    source: str | None = None,
+    both: bool = True,
+    retrieval: str = "dense",
 ) -> dict:
     """Run DeepEval LLM-as-judge metrics."""
-    result = deepeval_task(limit=limit, source=source, both=both)
+    result = deepeval_task(limit=limit, source=source, both=both, retrieval=retrieval)
     print("DeepEval summary:", result["summary"])
     return result
 
@@ -81,11 +93,12 @@ def full_flow(
     source: str | None = None,
     limit: int | None = None,
     mode: str = "hybrid",
+    retrieval: str = "dense",
     force: bool = False,
 ) -> dict:
     """Build both pipelines, then evaluate them (the default end-to-end flow)."""
     build_summary = build_task(source=source, force=force)
-    report = compare_task(limit=limit, mode=mode, source=source)
+    report = compare_task(limit=limit, mode=mode, retrieval=retrieval, source=source)
     return {"build": build_summary, "evaluation": report}
 
 

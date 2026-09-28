@@ -3,8 +3,9 @@
 A hands-on comparison of two retrieval-augmented generation pipelines, plus the
 production tooling around them:
 
-- **Traditional RAG** — chunk the corpus, embed the chunks, retrieve the top-`k`
-  by cosine similarity, feed them to the LLM.
+- **Traditional RAG** — chunk the corpus, then retrieve the top-`k` by **dense**
+  (cosine), **BM25** (lexical), or **hybrid** (reciprocal rank fusion) search,
+  and feed them to the LLM.
 - **GraphRAG** — use an LLM to extract entities and relationships, store them as
   a **knowledge graph in Neo4j** (with vector indexes for chunk/entity/community
   embeddings), then retrieve by *walking the graph* and by *community summaries*.
@@ -59,9 +60,9 @@ shows exactly this: GraphRAG raises supporting-fact recall from **0.81 → 0.98*
       ┌──────────────────┐                        ┌──────────────────────┐
       │ Traditional RAG  │                        │      GraphRAG        │
       │  embed chunks    │                        │ embed chunks         │
-      │  numpy vector    │                        │ LLM entity/rel       │
-      │  store (cosine)  │                        │ extraction           │
-      │  top-k           │                        │ Neo4j graph +        │
+      │  + BM25 index    │                        │ LLM entity/rel       │
+      │  dense / BM25 /  │                        │ extraction           │
+      │  hybrid (RRF)    │                        │ Neo4j graph +        │
       └────────┬─────────┘                        │ vector indexes       │
                │                                  │ community detection  │
                │                                  │ + LLM summaries      │
@@ -82,6 +83,14 @@ shows exactly this: GraphRAG raises supporting-fact recall from **0.81 → 0.98*
   related entity descriptions + relationship facts + linked chunks.
 - `global` — vector-match LLM-written community summaries (thematic questions).
 - `hybrid` (default) — both.
+
+**Traditional RAG retrieval modes** (`--retrieval`):
+
+- `dense` (default) — cosine top-`k` over embeddings.
+- `bm25` — lexical top-`k` over exact term overlap (strong on rare tokens and
+  proper nouns).
+- `hybrid` — fuse dense and BM25 rankings with reciprocal rank fusion
+  (`RRF_K = 60`).
 
 ---
 
@@ -257,6 +266,8 @@ What happens:
 1. Files are read and chunked (`CHUNK_SIZE` / `CHUNK_OVERLAP`).
 2. **Traditional RAG**: every chunk is embedded and stored in a cosine index
    keyed by a fingerprint of the corpus (`​.cache/traditional_rag/<fingerprint>/`).
+   The BM25 index is rebuilt in memory from that same stored chunk metadata, so
+   no extra artifacts are written.
 3. **GraphRAG**: entities/relationships are extracted, written to Neo4j, then
    communities are detected and summarised. Because the Neo4j graph is for one
    corpus at a time, switching corpora **automatically clears and rebuilds** it
@@ -310,13 +321,14 @@ All commands: `uv run --no-sync rag-compare <command>` (or `make <target>`).
 | `config` | Show resolved settings and integration status | |
 | `download` | Load/cache the corpus (download benchmark or scan files) | `--source` |
 | `build` | Build traditional index + Neo4j graph | `--source`, `--force` |
-| `ask "Q"` | Ask one question, compare both answers | `--source`, `--mode`, `-k`, `--context` |
-| `evaluate` | Custom metrics (EM/F1/support recall) + report | `--source`, `--limit`, `--mode`, `-k`, `--out` |
-| `deepeval` | LLM-as-judge metrics | `--source`, `--limit`, `--metrics`, `--both/--graph-only`, `--out` |
-| `flow` | Run through Prefect | `build\|evaluate\|deepeval\|all`, `--source`, `--limit`, `--mode`, `--force` |
+| `ask "Q"` | Ask one question, compare both answers | `--source`, `--mode`, `--retrieval`, `-k`, `--context` |
+| `evaluate` | Custom metrics (EM/F1/support recall) + report | `--source`, `--limit`, `--mode`, `--retrieval`, `-k`, `--out` |
+| `deepeval` | LLM-as-judge metrics | `--source`, `--limit`, `--metrics`, `--retrieval`, `--both/--graph-only`, `--out` |
+| `flow` | Run through Prefect | `build\|evaluate\|deepeval\|all`, `--source`, `--limit`, `--mode`, `--retrieval`, `--force` |
 | `graph` | Inspect Neo4j (top relations, communities) | `--limit` |
 
 `--source` values: `hotpotqa` (default) or `files`.
+`--retrieval` values: `dense` (default), `bm25`, or `hybrid` (traditional RAG only).
 
 **Examples**
 
@@ -326,6 +338,10 @@ uv run --no-sync rag-compare ask "What are the main themes?" --mode global
 
 # Evaluate only 10 questions, smaller context
 uv run --no-sync rag-compare evaluate --limit 10 -k 5
+
+# Compare traditional retrieval variants (dense vs BM25 vs hybrid)
+uv run --no-sync rag-compare evaluate --retrieval bm25
+uv run --no-sync rag-compare evaluate --retrieval hybrid
 
 # DeepEval with selected metrics
 uv run --no-sync rag-compare deepeval --limit 5 --metrics faithfulness,answer_relevancy
@@ -471,8 +487,9 @@ behaviour is identical either way.
 | `llm.py` | `LLMClient`: DeepInfra chat + embeddings, retries, **disk cache**, Langfuse hooks |
 | `data.py` | `Document`/`QAExample`; HotpotQA downloader; **local markdown/text loader** (`load_corpus`) + `corpus_qa.json` |
 | `text.py` | Sentence-aware `chunk_text`, `build_chunks`, `corpus_fingerprint` |
-| `vectorstore.py` | Tiny numpy cosine index with save/load (traditional RAG) |
-| `traditional_rag.py` | `TraditionalRAG`: embed chunks → top-k → answer |
+| `vectorstore.py` | Tiny numpy cosine index with save/load (dense retrieval) |
+| `bm25_index.py` | `BM25Index` + tokenizer (lexical retrieval via `rank-bm25`) |
+| `traditional_rag.py` | `TraditionalRAG`: dense / BM25 / hybrid (RRF) retrieval → answer |
 | `extraction.py` | LLM prompts + parsing for entities/relationships |
 | `communities.py` | Community detection (networkx) + LLM community summaries |
 | `graph_rag.py` | `GraphRAG`: Neo4j schema, indexes, extraction writes, community build, local/global retrieval, corpus-switch detection |
@@ -488,7 +505,7 @@ behaviour is identical either way.
 cli.py / flows.py
    └─> runner.py            (orchestration)
          ├─> data.py        (load + chunk documents)
-         ├─> traditional_rag.py ─> vectorstore.py ─> llm.py
+         ├─> traditional_rag.py ─> vectorstore.py + bm25_index.py ─> llm.py
          ├─> graph_rag.py  ─> extraction.py, communities.py ─> llm.py
          └─> evaluation.py / deepeval_eval.py
                     └─> llm.py  (all model calls go through here → cached + traced)
@@ -513,7 +530,8 @@ cli.py / flows.py
 
 Benchmark: **HotpotQA validation, 30 hard multi-hop questions**, 291 passages,
 310 chunks. Answer model `meta-llama/Llama-3.3-70B-Instruct-Turbo`, embeddings
-`BAAI/bge-m3`. GraphRAG `hybrid`, 2 hops, 5 entity seeds.
+`BAAI/bge-m3`. Traditional RAG `--retrieval dense` (the default), GraphRAG
+`hybrid`, 2 hops, 5 entity seeds.
 
 | Metric | Traditional RAG | GraphRAG | Δ |
 |--------|----------------:|---------:|---:|

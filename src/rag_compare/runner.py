@@ -56,6 +56,7 @@ def run_comparison(
     *,
     limit: int | None = None,
     mode: str = "hybrid",
+    retrieval: str = "dense",
     k: int | None = None,
     source: str | None = None,
     settings: Settings | None = None,
@@ -84,16 +85,18 @@ def run_comparison(
             "`rag-compare build --source ...` before evaluating."
         )
 
-    trad_summary = EvalSummary("traditional_rag")
+    trad_summary = EvalSummary(f"traditional_rag_{retrieval}")
     graph_summary = EvalSummary(f"graph_rag_{mode}")
 
     with llm.tracer.span(
-        "comparison.run", input={"n": len(examples), "mode": mode}
+        "comparison.run", input={"n": len(examples), "mode": mode, "retrieval": retrieval}
     ) as span:
         for i, example in enumerate(examples, 1):
             logger.info("(%d/%d) %s", i, len(examples), example.question)
             trad_summary.add(
-                score_result(traditional.answer(example.question, k), example)
+                score_result(
+                    traditional.answer(example.question, k, mode=retrieval), example
+                )
             )
             graph_summary.add(
                 score_result(graph.answer(example.question, mode=mode, k=k), example)
@@ -121,6 +124,7 @@ def run_comparison(
             "llm_model": settings.llm_model,
             "embedding_model": settings.embedding_model,
             "top_k": k or settings.top_k,
+            "retrieval_mode": retrieval,
             "graph_mode": mode,
             "graph_hops": settings.graph_hops,
         },
@@ -144,6 +148,7 @@ def run_deepeval(
     source: str | None = None,
     both: bool = True,
     metrics: list[str] | None = None,
+    retrieval: str = "dense",
     k: int | None = None,
     settings: Settings | None = None,
 ) -> dict:
@@ -180,7 +185,7 @@ def run_deepeval(
         if both:
             cases["graph_rag"] = []
         for example in examples:
-            trad = traditional.answer(example.question, k)
+            trad = traditional.answer(example.question, k, mode=retrieval)
             cases["traditional_rag"].append(
                 build_test_case(example.question, trad, example.answer)
             )

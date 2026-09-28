@@ -18,6 +18,7 @@ dependencies = [
     "prefect>=3.8.6",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
+    "rank-bm25>=0.2.2",
     "rich>=13.9",
     "tenacity>=9.0",
     "tqdm>=4.67",

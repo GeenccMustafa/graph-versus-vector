@@ -46,6 +46,13 @@ SOURCE_OPTION = typer.Option(
     None, "--source", "-s", help="Corpus source: 'hotpotqa' or 'files'."
 )
 
+RETRIEVAL_OPTION = typer.Option(
+    "dense",
+    "--retrieval",
+    "-r",
+    help="Traditional RAG retrieval: dense|bm25|hybrid.",
+)
+
 
 def _langfuse_status(s) -> str:
     """Return a human-readable Langfuse tracing status for the config table."""
@@ -135,6 +142,7 @@ def ask(
     question: str = typer.Argument(..., help="Question to ask both systems."),
     source: str = SOURCE_OPTION,
     mode: str = typer.Option("hybrid", help="GraphRAG mode: local|global|hybrid."),
+    retrieval: str = RETRIEVAL_OPTION,
     k: int = typer.Option(None, help="Number of chunks to retrieve."),
     show_context: bool = typer.Option(False, "--context", help="Show retrieved context."),
 ) -> None:
@@ -154,13 +162,13 @@ def ask(
                 f"`rag-compare build --source {source or settings.dataset_name}`.[/]"
             )
             raise typer.Exit(1)
-        trad = traditional.answer(question, k)
+        trad = traditional.answer(question, k, mode=retrieval)
         graph_res = graph.answer(question, mode=mode, k=k)
     llm.tracer.flush()
 
     table = Table(title=f"Q: {question}", show_lines=True)
     table.add_column("", style="bold", no_wrap=True)
-    table.add_column("Traditional RAG", overflow="fold")
+    table.add_column(f"Traditional RAG ({retrieval})", overflow="fold")
     table.add_column(f"GraphRAG ({mode})", overflow="fold")
     table.add_row("Answer", trad.answer, graph_res.answer)
     table.add_row("Latency", f"{trad.latency_s:.2f}s", f"{graph_res.latency_s:.2f}s")
@@ -187,11 +195,12 @@ def evaluate(
     source: str = SOURCE_OPTION,
     limit: int = typer.Option(None, help="Number of questions to evaluate."),
     mode: str = typer.Option("hybrid", help="GraphRAG mode: local|global|hybrid."),
+    retrieval: str = RETRIEVAL_OPTION,
     k: int = typer.Option(None, help="Number of chunks to retrieve."),
     out: Path = typer.Option(Path("results/comparison.json"), help="Report output path."),
 ) -> None:
     """Run the custom-metrics benchmark and print a comparison report."""
-    report = run_comparison(limit=limit, mode=mode, k=k, source=source)
+    report = run_comparison(limit=limit, mode=mode, retrieval=retrieval, k=k, source=source)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2))
     _print_comparison(report)
@@ -202,6 +211,7 @@ def _print_comparison(report: dict) -> None:
     """Print the side-by-side comparison table for an evaluation report."""
     trad = report["results"]["traditional_rag"]
     graph = report["results"]["graph_rag"]
+    retrieval = report.get("config", {}).get("retrieval_mode", "dense")
     rows = [
         ("Exact match", "exact_match"),
         ("F1", "f1"),
@@ -211,7 +221,7 @@ def _print_comparison(report: dict) -> None:
         ("Tokens", "avg_tokens"),
         ("Context items", "avg_context_items"),
     ]
-    table = Table(title=f"GraphRAG vs Traditional RAG (n={trad['n']})")
+    table = Table(title=f"GraphRAG vs Traditional RAG [{retrieval}] (n={trad['n']})")
     table.add_column("Metric", style="bold")
     table.add_column("Traditional RAG", justify="right")
     table.add_column("GraphRAG", justify="right")
@@ -232,13 +242,19 @@ def deepeval(
         None, help="Comma-separated metric names (default from .env)."
     ),
     both: bool = typer.Option(True, "--both/--graph-only", help="Evaluate both pipelines."),
+    retrieval: str = RETRIEVAL_OPTION,
     k: int = typer.Option(None, help="Number of chunks to retrieve."),
     out: Path = typer.Option(Path("results/deepeval.json"), help="Report output path."),
 ) -> None:
     """Run DeepEval LLM-as-judge metrics for RAG quality."""
     metric_names = [m.strip() for m in metrics.split(",")] if metrics else None
     result = run_deepeval(
-        limit=limit, source=source, both=both, metrics=metric_names, k=k
+        limit=limit,
+        source=source,
+        both=both,
+        metrics=metric_names,
+        retrieval=retrieval,
+        k=k,
     )
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, indent=2))
@@ -266,6 +282,7 @@ def flow(
     source: str = SOURCE_OPTION,
     limit: int = typer.Option(None, help="Number of questions to evaluate."),
     mode: str = typer.Option("hybrid", help="GraphRAG mode: local|global|hybrid."),
+    retrieval: str = RETRIEVAL_OPTION,
     force: bool = typer.Option(False, help="Force rebuild."),
 ) -> None:
     """Run the pipeline through Prefect (start UI with `uv run prefect server start`)."""
@@ -275,11 +292,13 @@ def flow(
     if command == "build":
         flows.build_flow(source=source, force=force)
     elif command == "evaluate":
-        flows.evaluate_flow(limit=limit, mode=mode, source=source)
+        flows.evaluate_flow(limit=limit, mode=mode, retrieval=retrieval, source=source)
     elif command == "deepeval":
-        flows.deepeval_flow(limit=limit, source=source)
+        flows.deepeval_flow(limit=limit, source=source, retrieval=retrieval)
     elif command == "all":
-        flows.full_flow(source=source, limit=limit, mode=mode, force=force)
+        flows.full_flow(
+            source=source, limit=limit, mode=mode, retrieval=retrieval, force=force
+        )
     else:
         console.print(f"[red]Unknown flow {command!r}[/] (use build/evaluate/deepeval/all)")
         raise typer.Exit(1)

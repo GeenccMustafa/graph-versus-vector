@@ -7,7 +7,7 @@
 #   make download    # fetch the HotpotQA benchmark
 #   make build       # build both indexes (benchmark corpus)
 #   make ask Q="..." # ask one question
-#   make evaluate    # run the benchmark
+#   make evaluate    # run the benchmark (RETRIEVAL=dense|bm25|hybrid)
 #   make deepeval    # run LLM-as-judge metrics
 #   make graph       # inspect Neo4j
 #   make neo4j       # start Neo4j via Homebrew
@@ -19,6 +19,7 @@
 RUN := uv run --no-sync rag-compare
 SOURCE ?=
 SOURCE_ARG := $(if $(SOURCE),--source $(SOURCE),)
+RETRIEVAL ?= dense
 Q ?= What is this about?
 
 .PHONY: up down install reinstall fix-pth config download build ask evaluate deepeval graph flow neo4j langfuse langfuse-down ui deps
@@ -51,13 +52,13 @@ build:
 	$(RUN) build $(SOURCE_ARG) --force
 
 ask:
-	$(RUN) ask "$(Q)" $(SOURCE_ARG)
+	$(RUN) ask "$(Q)" $(SOURCE_ARG) --retrieval $(RETRIEVAL)
 
 evaluate:
-	$(RUN) evaluate $(SOURCE_ARG)
+	$(RUN) evaluate $(SOURCE_ARG) --retrieval $(RETRIEVAL)
 
 deepeval:
-	$(RUN) deepeval $(SOURCE_ARG)
+	$(RUN) deepeval $(SOURCE_ARG) --retrieval $(RETRIEVAL)
 
 graph:
 	$(RUN) graph
