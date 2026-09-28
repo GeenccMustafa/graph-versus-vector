@@ -29,20 +29,39 @@ PAGE_SIZE = 100
 
 @dataclass
 class Document:
-    """A single source passage (a Wikipedia paragraph)."""
+    """A single source passage (a Wikipedia paragraph).
+
+    Attributes:
+        doc_id: Identifier of the document (title or relative file path).
+        title: Human-readable title, used for display and support matching.
+        text: The full passage text.
+    """
 
     doc_id: str
     title: str
     text: str
 
     def render(self) -> str:
-        """Return the passage as title-prefixed text for embedding."""
+        """Return the passage as title-prefixed text for embedding.
+
+        Returns:
+            The title and text separated by a newline.
+        """
         return f"{self.title}\n{self.text}"
 
 
 @dataclass
 class QAExample:
-    """One benchmark question with its gold answer and supporting facts."""
+    """One benchmark question with its gold answer and supporting facts.
+
+    Attributes:
+        question: The question text.
+        answer: The gold answer string.
+        qid: Optional dataset question id.
+        level: Optional difficulty level (e.g. ``hard``).
+        qtype: Optional question type (e.g. ``comparison``).
+        supporting: Gold evidence as ``(title, sentence_index)`` pairs.
+    """
 
     question: str
     answer: str
@@ -61,7 +80,21 @@ class QAExample:
 def _fetch_rows(
     dataset: str, config: str, split: str, offset: int, length: int
 ) -> list[dict]:
-    """Fetch one page of rows from the HuggingFace datasets-server API."""
+    """Fetch one page of rows from the HuggingFace datasets-server API.
+
+    Args:
+        dataset: Dataset id, e.g. ``hotpotqa/hotpot_qa``.
+        config: Dataset configuration name.
+        split: Split name, e.g. ``validation``.
+        offset: Row offset to start from.
+        length: Number of rows to request.
+
+    Returns:
+        The raw row dictionaries for this page.
+
+    Raises:
+        RuntimeError: If the API returns an error payload.
+    """
     params = {
         "dataset": dataset,
         "config": config,
@@ -82,9 +115,17 @@ def load_hotpotqa(
     *,
     num_examples: int | None = None,
 ) -> tuple[list[Document], list[QAExample]]:
-    """Return ``(documents, examples)`` for the requested slice of HotpotQA.
+    """Load a slice of the HotpotQA benchmark.
 
     Results are cached to ``data/`` so repeated runs are instant and offline.
+
+    Args:
+        settings: Optional settings override.
+        num_examples: Number of examples to load; defaults to
+            ``settings.num_examples``.
+
+    Returns:
+        A ``(documents, examples)`` tuple.
     """
     settings = settings or get_settings()
     num_examples = num_examples or settings.num_examples
@@ -147,7 +188,14 @@ _HEADING_RE = re.compile(r"^\s{0,3}#{1,6}\s+(.*)$")
 
 
 def _read_text(path: Path) -> str:
-    """Read ``path`` as UTF-8, falling back to latin-1 on decode errors."""
+    """Read ``path`` as UTF-8, falling back to latin-1 on decode errors.
+
+    Args:
+        path: The file to read.
+
+    Returns:
+        The decoded file contents.
+    """
     try:
         return path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
@@ -155,7 +203,15 @@ def _read_text(path: Path) -> str:
 
 
 def _title_for(path: Path, text: str) -> str:
-    """Return the first markdown heading in ``text``, else the file stem."""
+    """Return the first markdown heading in ``text``, else the file stem.
+
+    Args:
+        path: The source file (its stem is the fallback title).
+        text: The file contents.
+
+    Returns:
+        The document title.
+    """
     for line in text.splitlines():
         match = _HEADING_RE.match(line)
         if match:
@@ -178,6 +234,13 @@ def load_corpus(
           {"question": "...", "answer": "...",
            "supporting_titles": ["My Doc", "Another Doc"]}
         ]
+
+    Args:
+        settings: Optional settings override; ``docs_dir`` is scanned.
+
+    Returns:
+        A ``(documents, examples)`` tuple; ``examples`` is empty when no
+        ``corpus_qa.json`` is present.
     """
     settings = settings or get_settings()
     root = settings.docs_dir
@@ -240,8 +303,17 @@ def load_dataset(
 ) -> tuple[list[Document], list[QAExample]]:
     """Dispatch to the benchmark loader or the local-file loader.
 
-    ``source`` overrides ``settings.dataset_name`` (values: ``hotpotqa`` or
-    ``files``).
+    Args:
+        settings: Optional settings override.
+        num_examples: Number of benchmark examples to load.
+        source: Overrides ``settings.dataset_name``; supported values are
+            ``hotpotqa`` and ``files`` (aliases accepted).
+
+    Returns:
+        A ``(documents, examples)`` tuple.
+
+    Raises:
+        ValueError: If the source is not recognised.
     """
     settings = settings or get_settings()
     name = (source or settings.dataset_name).lower()

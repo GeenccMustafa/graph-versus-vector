@@ -55,7 +55,14 @@ RETRIEVAL_OPTION = typer.Option(
 
 
 def _langfuse_status(s) -> str:
-    """Return a human-readable Langfuse tracing status for the config table."""
+    """Return a human-readable Langfuse tracing status for the config table.
+
+    Args:
+        s: The resolved settings.
+
+    Returns:
+        A short status string describing whether tracing is active.
+    """
     if not s.tracing_enabled:
         return "disabled (no keys)"
     if langfuse_reachable(s.langfuse_host):
@@ -64,7 +71,14 @@ def _langfuse_status(s) -> str:
 
 
 def _load_chunks(source: str | None = None):
-    """Load dataset and chunks using the cached global settings."""
+    """Load dataset and chunks using the cached global settings.
+
+    Args:
+        source: Corpus source; ``None`` uses the configured dataset.
+
+    Returns:
+        A ``(settings, documents, examples, chunks)`` tuple.
+    """
     settings = get_settings()
     documents, examples = load_dataset(settings, source=source)
     chunks = build_chunks(documents, settings.chunk_size, settings.chunk_overlap)
@@ -100,7 +114,11 @@ def config() -> None:
 
 @app.command()
 def download(source: str = SOURCE_OPTION) -> None:
-    """Download and cache the multi-hop QA dataset (or scan local files)."""
+    """Download and cache the multi-hop QA dataset (or scan local files).
+
+    Args:
+        source: Corpus source; ``None`` uses the configured dataset.
+    """
     settings = get_settings()
     documents, examples = load_dataset(settings, source=source)
     levels: dict[str, int] = {}
@@ -122,7 +140,12 @@ def build(
     source: str = SOURCE_OPTION,
     force: bool = typer.Option(False, help="Rebuild indexes from scratch."),
 ) -> None:
-    """Build the traditional RAG index and the Neo4j knowledge graph."""
+    """Build the traditional RAG index and the Neo4j knowledge graph.
+
+    Args:
+        source: Corpus source; ``None`` uses the configured dataset.
+        force: Rebuild indexes from scratch instead of reusing caches.
+    """
     summary = build_all(source, force=force)
     table = Table(title="Neo4j graph")
     table.add_column("Node / Edge")
@@ -146,7 +169,17 @@ def ask(
     k: int = typer.Option(None, help="Number of chunks to retrieve."),
     show_context: bool = typer.Option(False, "--context", help="Show retrieved context."),
 ) -> None:
-    """Ask a single question and compare the two systems side by side."""
+    """Ask a single question and compare the two systems side by side.
+
+    Args:
+        question: The question to ask both systems.
+        source: Corpus source; ``None`` uses the configured dataset.
+        mode: GraphRAG retrieval mode (``local``, ``global`` or ``hybrid``).
+        retrieval: Traditional RAG retrieval mode (``dense``, ``bm25`` or
+            ``hybrid``).
+        k: Number of chunks to retrieve; defaults to ``TOP_K``.
+        show_context: Print the retrieved context for both pipelines.
+    """
     settings, _, _, chunks = _load_chunks(source)
     llm = LLMClient(settings)
 
@@ -199,7 +232,17 @@ def evaluate(
     k: int = typer.Option(None, help="Number of chunks to retrieve."),
     out: Path = typer.Option(Path("results/comparison.json"), help="Report output path."),
 ) -> None:
-    """Run the custom-metrics benchmark and print a comparison report."""
+    """Run the custom-metrics benchmark and print a comparison report.
+
+    Args:
+        source: Corpus source; ``None`` uses the configured dataset.
+        limit: Maximum number of questions to evaluate.
+        mode: GraphRAG retrieval mode (``local``, ``global`` or ``hybrid``).
+        retrieval: Traditional RAG retrieval mode (``dense``, ``bm25`` or
+            ``hybrid``).
+        k: Number of chunks to retrieve; defaults to ``TOP_K``.
+        out: Where to write the JSON report.
+    """
     report = run_comparison(limit=limit, mode=mode, retrieval=retrieval, k=k, source=source)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, indent=2))
@@ -208,7 +251,11 @@ def evaluate(
 
 
 def _print_comparison(report: dict) -> None:
-    """Print the side-by-side comparison table for an evaluation report."""
+    """Print the side-by-side comparison table for an evaluation report.
+
+    Args:
+        report: The report dict returned by :func:`runner.run_comparison`.
+    """
     trad = report["results"]["traditional_rag"]
     graph = report["results"]["graph_rag"]
     retrieval = report.get("config", {}).get("retrieval_mode", "dense")
@@ -246,7 +293,19 @@ def deepeval(
     k: int = typer.Option(None, help="Number of chunks to retrieve."),
     out: Path = typer.Option(Path("results/deepeval.json"), help="Report output path."),
 ) -> None:
-    """Run DeepEval LLM-as-judge metrics for RAG quality."""
+    """Run DeepEval LLM-as-judge metrics for RAG quality.
+
+    Args:
+        source: Corpus source; ``None`` uses the configured dataset.
+        limit: Maximum number of questions (the LLM judge is costly).
+        metrics: Comma-separated metric names; ``None`` uses the configured
+            defaults.
+        both: Evaluate both pipelines, otherwise traditional RAG only.
+        retrieval: Traditional RAG retrieval mode (``dense``, ``bm25`` or
+            ``hybrid``).
+        k: Number of chunks to retrieve; defaults to ``TOP_K``.
+        out: Where to write the JSON report.
+    """
     metric_names = [m.strip() for m in metrics.split(",")] if metrics else None
     result = run_deepeval(
         limit=limit,
@@ -285,7 +344,20 @@ def flow(
     retrieval: str = RETRIEVAL_OPTION,
     force: bool = typer.Option(False, help="Force rebuild."),
 ) -> None:
-    """Run the pipeline through Prefect (start UI with `uv run prefect server start`)."""
+    """Run the pipeline through Prefect.
+
+    Start the UI with ``uv run prefect server start``.
+
+    Args:
+        command: Which flow to run: ``build``, ``evaluate``, ``deepeval`` or
+            ``all``.
+        source: Corpus source; ``None`` uses the configured dataset.
+        limit: Maximum number of questions to evaluate.
+        mode: GraphRAG retrieval mode (``local``, ``global`` or ``hybrid``).
+        retrieval: Traditional RAG retrieval mode (``dense``, ``bm25`` or
+            ``hybrid``).
+        force: Force a rebuild for the build/all flows.
+    """
     from . import flows
 
     command = command.lower()
@@ -308,7 +380,11 @@ def flow(
 def graph(
     limit: int = typer.Option(15, help="Max rows to display per section."),
 ) -> None:
-    """Inspect entities, relationships and communities in Neo4j."""
+    """Inspect entities, relationships and communities in Neo4j.
+
+    Args:
+        limit: Maximum rows/cards to display per section.
+    """
     settings = get_settings()
     with GraphRAG(settings) as gr:
         if not gr.is_built:

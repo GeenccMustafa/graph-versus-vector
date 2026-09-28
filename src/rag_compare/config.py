@@ -15,6 +15,10 @@ def _find_project_root() -> Path:
 
     Works whether the package is installed editable or as a regular wheel,
     and regardless of where the source file lives.
+
+    Returns:
+        The resolved project root, or the current working directory as a
+        last resort.
     """
     env_root = os.environ.get("RAG_COMPARE_ROOT")
     if env_root:
@@ -124,7 +128,14 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Return the process-wide cached :class:`Settings` and ensure dirs exist."""
+    """Return the process-wide cached :class:`Settings`.
+
+    Also ensures the data and cache directories exist. The result is cached,
+    so repeated calls return the same instance.
+
+    Returns:
+        The resolved settings object.
+    """
     settings = Settings()  # type: ignore[call-arg]
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     settings.cache_dir.mkdir(parents=True, exist_ok=True)

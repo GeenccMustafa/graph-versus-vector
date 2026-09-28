@@ -38,7 +38,17 @@ def detect_communities(
     *,
     resolution: float = 1.0,
 ) -> list[list[str]]:
-    """Return communities as lists of normalised entity names."""
+    """Group entities into communities using graph modularity.
+
+    Args:
+        entities: The entities to cluster.
+        relationships: The edges connecting them.
+        resolution: Louvain resolution; larger values yield more, smaller
+            communities.
+
+    Returns:
+        Communities as lists of sorted, normalised entity names.
+    """
     graph = nx.Graph()
     for e in entities:
         graph.add_node(normalize_name(e.name))
@@ -67,7 +77,19 @@ def summarize_community(
     *,
     model: str | None = None,
 ) -> str:
-    """Return an LLM-written summary report for one community."""
+    """Return an LLM-written summary report for one community.
+
+    Args:
+        llm: The chat client used to generate the report.
+        entity_names: Normalised names of the community's members.
+        entity_by_name: Lookup from normalised name to :class:`Entity`.
+        relationships: All graph relationships; only those internal to the
+            community are shown to the model.
+        model: Optional model override.
+
+    Returns:
+        The stripped summary text.
+    """
     name_set = set(entity_names)
     ent_lines = []
     for n in entity_names:

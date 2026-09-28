@@ -36,10 +36,23 @@ HYBRID_MODES = {"hybrid", "dense+bm25", "sparse+dense", "rrf"}
 
 
 class TraditionalRAG:
-    """Flat vector-RAG baseline: embed chunks, then cosine top-k retrieval."""
+    """Flat vector-RAG baseline with dense, BM25 and hybrid retrieval.
+
+    Attributes:
+        settings: The resolved settings in use.
+        llm: The shared chat/embedding client.
+        index: The dense vector index.
+        bm25: The BM25 lexical index (built lazily from the vector metadata).
+        store_root: Root directory for persisted indexes.
+    """
 
     def __init__(self, settings: Settings | None = None, llm: LLMClient | None = None):
-        """Bind the settings, LLM client and cache location for the index."""
+        """Bind the settings, LLM client and cache location for the index.
+
+        Args:
+            settings: Optional settings override.
+            llm: Optional shared :class:`LLMClient`.
+        """
         self.settings = settings or get_settings()
         self.llm = llm or LLMClient(self.settings)
         self.index = VectorIndex()
@@ -48,7 +61,12 @@ class TraditionalRAG:
 
     # ------------------------------------------------------------------ build
     def build(self, chunks: list[Chunk], *, force: bool = False) -> None:
-        """Embed ``chunks`` and persist the index, reusing a matching cache."""
+        """Embed ``chunks`` and persist the index, reusing a matching cache.
+
+        Args:
+            chunks: The corpus chunks to index.
+            force: Re-embed even if a matching cached index exists.
+        """
         self.bm25 = BM25Index()
         # Index per corpus fingerprint so switching corpora never reuses a
         # stale embedding matrix.
@@ -75,18 +93,43 @@ class TraditionalRAG:
             self.bm25.build([m["text"] for m in self.index.meta])
 
     def _dense_hits(self, question: str, k: int) -> list[SearchHit]:
-        """Return dense vector-search hits for the question."""
+        """Return dense vector-search hits for the question.
+
+        Args:
+            question: The question to embed and match.
+            k: Maximum number of hits to return.
+
+        Returns:
+            The vector-search hits, ordered by descending similarity.
+        """
         qvec = self.llm.embed_one(question)
         return self.index.search(qvec, k)
 
     def _sparse_hits(self, question: str, k: int) -> list[SparseHit]:
-        """Return BM25 lexical-search hits for the question."""
+        """Return BM25 lexical-search hits for the question.
+
+        Args:
+            question: The question to tokenize and match.
+            k: Maximum number of hits to return.
+
+        Returns:
+            The BM25 hits, ordered by descending score.
+        """
         self._ensure_bm25()
         return self.bm25.search(question, k)
 
     @staticmethod
     def _item(meta: dict, score: float, kind: str = "chunk") -> RetrievalItem:
-        """Build a retrieval item from stored chunk metadata."""
+        """Build a retrieval item from stored chunk metadata.
+
+        Args:
+            meta: A chunk metadata record.
+            score: The retrieval score to attach.
+            kind: The provenance tag for the item.
+
+        Returns:
+            The assembled :class:`RetrievalItem`.
+        """
         return RetrievalItem(
             id=meta["id"],
             text=meta["text"],
@@ -96,7 +139,15 @@ class TraditionalRAG:
         )
 
     def _retrieve_hybrid(self, question: str, k: int) -> list[RetrievalItem]:
-        """Fuse dense and BM25 rankings with reciprocal rank fusion (RRF)."""
+        """Fuse dense and BM25 rankings with reciprocal rank fusion (RRF).
+
+        Args:
+            question: The question to retrieve for.
+            k: Maximum number of fused items to return.
+
+        Returns:
+            The top-``k`` items by summed reciprocal rank.
+        """
         fused: dict[int, float] = {}
         for hits in (self._dense_hits(question, k), self._sparse_hits(question, k)):
             for rank, hit in enumerate(hits):
@@ -107,7 +158,17 @@ class TraditionalRAG:
     def retrieve(
         self, question: str, k: int | None = None, *, mode: str = "dense"
     ) -> list[RetrievalItem]:
-        """Return the top-``k`` chunks using ``dense``, ``bm25`` or ``hybrid``."""
+        """Return the top-``k`` chunks for the given retrieval mode.
+
+        Args:
+            question: The question to retrieve for.
+            k: Number of chunks; defaults to ``settings.top_k``.
+            mode: ``dense``, ``bm25`` or ``hybrid`` (aliases accepted); unknown
+                values fall back to ``dense``.
+
+        Returns:
+            The retrieved items in descending relevance order.
+        """
         k = k or self.settings.top_k
         mode = (mode or "dense").lower()
         if mode in BM25_MODES:
@@ -125,7 +186,16 @@ class TraditionalRAG:
     def answer(
         self, question: str, k: int | None = None, *, mode: str = "dense"
     ) -> RAGResult:
-        """Answer ``question`` from the retrieved chunks and return the result."""
+        """Answer ``question`` from the retrieved chunks.
+
+        Args:
+            question: The question to answer.
+            k: Number of chunks to retrieve; defaults to ``settings.top_k``.
+            mode: Retrieval mode: ``dense``, ``bm25`` or ``hybrid``.
+
+        Returns:
+            The answer, retrieved evidence and usage stats.
+        """
         t0 = time.perf_counter()
         with self.llm.tracer.span(
             "traditional_rag.answer", input=question, metadata={"retrieval": mode}

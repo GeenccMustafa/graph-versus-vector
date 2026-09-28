@@ -37,19 +37,46 @@ logger = logging.getLogger(__name__)
 
 
 class DeepInfraJudge(DeepEvalBaseLLM):
-    """DeepEval judge backed by our DeepInfra (OpenAI-compatible) client."""
+    """DeepEval judge backed by our DeepInfra (OpenAI-compatible) client.
+
+    Attributes:
+        settings: The resolved settings in use.
+        llm: The shared chat client used to produce judgements.
+    """
 
     def __init__(self, llm: LLMClient | None = None, settings: Settings | None = None):
-        """Bind the settings and the shared LLM client used for judging."""
+        """Bind the settings and the shared LLM client used for judging.
+
+        Args:
+            llm: Optional shared :class:`LLMClient`.
+            settings: Optional settings override.
+        """
         self.settings = settings or get_settings()
         self.llm = llm or LLMClient(self.settings)
 
     def load_model(self):
-        """Return ``self``; DeepEval uses this to lazily initialise the model."""
+        """Return ``self``; DeepEval uses this to lazily initialise the model.
+
+        Returns:
+            This judge instance.
+        """
         return self
 
     def generate(self, prompt: str, schema=None, **kwargs):
-        """Generate a judge response, validating it against ``schema`` if given."""
+        """Generate a judge response, validating it against ``schema`` if given.
+
+        Args:
+            prompt: The judge prompt.
+            schema: Optional pydantic model the response must validate against.
+            **kwargs: Ignored extra arguments from the DeepEval interface.
+
+        Returns:
+            The validated schema instance when ``schema`` is given, otherwise
+            the raw response text.
+
+        Raises:
+            ValueError: If a structured response cannot be produced.
+        """
         if schema is not None:
             data, _ = self.llm.chat_json(
                 [
@@ -82,11 +109,24 @@ class DeepInfraJudge(DeepEvalBaseLLM):
         ).text
 
     async def a_generate(self, prompt: str, schema=None, **kwargs):
-        """Asynchronous wrapper around :meth:`generate`."""
+        """Asynchronous wrapper around :meth:`generate`.
+
+        Args:
+            prompt: The judge prompt.
+            schema: Optional pydantic model the response must validate against.
+            **kwargs: Ignored extra arguments from the DeepEval interface.
+
+        Returns:
+            The same value as :meth:`generate`.
+        """
         return self.generate(prompt, schema=schema, **kwargs)
 
     def get_model_name(self) -> str:
-        """Return the underlying model name, for reporting."""
+        """Return the underlying model name, for reporting.
+
+        Returns:
+            The configured chat model name.
+        """
         return self.settings.llm_model
 
 
@@ -102,7 +142,16 @@ METRIC_REGISTRY = {
 
 @dataclass
 class DeepevalRecord:
-    """One metric score for one question under one pipeline."""
+    """One metric score for one question under one pipeline.
+
+    Attributes:
+        pipeline: The pipeline the score belongs to.
+        question: The evaluated question.
+        metric: The DeepEval metric name.
+        score: The metric score, or ``None`` if measurement failed.
+        success: Whether the score met the configured threshold.
+        reason: The judge's explanation, or an error string.
+    """
 
     pipeline: str
     question: str
@@ -113,7 +162,16 @@ class DeepevalRecord:
 
 
 def build_test_case(question: str, result: RAGResult, expected: str) -> LLMTestCase:
-    """Convert a RAG result into a DeepEval LLM test case."""
+    """Convert a RAG result into a DeepEval LLM test case.
+
+    Args:
+        question: The question that was asked.
+        result: The pipeline result to convert.
+        expected: The gold answer.
+
+    Returns:
+        The assembled :class:`LLMTestCase`.
+    """
     return LLMTestCase(
         input=question,
         actual_output=result.answer,
@@ -130,7 +188,14 @@ def evaluate_test_cases(
 ) -> dict:
     """Run DeepEval metrics over one or more pipelines and summarise.
 
-    Returns ``{"summary": {pipeline: {metric: {...}}}, "records": [...]}``.
+    Args:
+        cases_by_pipeline: Test cases keyed by pipeline name.
+        settings: Optional settings override.
+        metric_names: Metric names to run; ``None`` uses the configured list.
+        judge: Optional judge override.
+
+    Returns:
+        A dict ``{"summary": {pipeline: {metric: {...}}}, "records": [...]}``.
     """
     settings = settings or get_settings()
     metric_names = metric_names or settings.deepeval_metric_list

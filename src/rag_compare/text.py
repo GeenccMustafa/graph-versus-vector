@@ -11,7 +11,14 @@ from .data import Document
 
 @dataclass
 class Chunk:
-    """A retrievable slice of a source document."""
+    """A retrievable slice of a source document.
+
+    Attributes:
+        chunk_id: Stable id, ``"{doc_id}::{index}"``.
+        doc_id: Identifier of the parent document.
+        title: Document title, used as a prefix when rendering.
+        text: The chunk's text content.
+    """
 
     chunk_id: str
     doc_id: str
@@ -19,7 +26,11 @@ class Chunk:
     text: str
 
     def render(self) -> str:
-        """Return the chunk as title-prefixed text for embedding or prompting."""
+        """Return the chunk as title-prefixed text for embedding or prompting.
+
+        Returns:
+            The chunk text prefixed with its bracketed title.
+        """
         return f"[{self.title}] {self.text}"
 
 
@@ -27,13 +38,30 @@ _SENT_RE = re.compile(r"(?<=[.!?])\s+")
 
 
 def _split_sentences(text: str) -> list[str]:
-    """Split ``text`` into sentences on terminal punctuation."""
+    """Split ``text`` into sentences on terminal punctuation.
+
+    Args:
+        text: The text to split.
+
+    Returns:
+        Non-empty, stripped sentences; the original text if none are found.
+    """
     parts = [p.strip() for p in _SENT_RE.split(text) if p.strip()]
     return parts or [text.strip()]
 
 
 def chunk_text(text: str, size: int, overlap: int) -> list[str]:
-    """Sentence-aware chunker that respects a character budget."""
+    """Split text into sentence-aware chunks within a character budget.
+
+    Args:
+        text: The text to chunk.
+        size: Maximum number of characters per chunk.
+        overlap: Approximate number of trailing characters to repeat between
+            consecutive chunks.
+
+    Returns:
+        The list of chunk strings.
+    """
     if len(text) <= size:
         return [text]
     sentences = _split_sentences(text)
@@ -61,10 +89,16 @@ def chunk_text(text: str, size: int, overlap: int) -> list[str]:
 
 
 def corpus_fingerprint(chunks: list[Chunk]) -> str:
-    """Stable hash of a chunk set, used to detect corpus switches.
+    """Return a stable hash of a chunk set, used to detect corpus switches.
 
     Traditional index directories and the Neo4j graph marker are keyed on this,
     so building a different corpus never silently reuses stale indexes.
+
+    Args:
+        chunks: The chunks whose ids define the corpus.
+
+    Returns:
+        A short (16 hex character) deterministic fingerprint.
     """
     digest = hashlib.sha256()
     for chunk_id in sorted(c.chunk_id for c in chunks):
@@ -74,7 +108,16 @@ def corpus_fingerprint(chunks: list[Chunk]) -> str:
 
 
 def build_chunks(documents: list[Document], size: int, overlap: int) -> list[Chunk]:
-    """Split ``documents`` into sentence-aware, overlapping chunks."""
+    """Split ``documents`` into sentence-aware, overlapping chunks.
+
+    Args:
+        documents: Source documents to chunk.
+        size: Maximum number of characters per chunk.
+        overlap: Approximate overlap between consecutive chunks.
+
+    Returns:
+        One :class:`Chunk` per generated piece, in document order.
+    """
     chunks: list[Chunk] = []
     for doc in documents:
         pieces = chunk_text(doc.text, size, overlap)

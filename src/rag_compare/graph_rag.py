@@ -47,17 +47,32 @@ COMMUNITY_INDEX = "community_embeddings"
 
 
 class GraphRAG:
-    """Knowledge-graph RAG over Neo4j with local, global and hybrid retrieval."""
+    """Knowledge-graph RAG over Neo4j with local, global and hybrid retrieval.
+
+    Attributes:
+        settings: The resolved settings in use.
+        llm: The shared chat/embedding client.
+        driver: The Neo4j driver, opened lazily by :meth:`connect`.
+    """
 
     def __init__(self, settings: Settings | None = None, llm: LLMClient | None = None):
-        """Bind the settings and LLM client; the driver is opened lazily."""
+        """Bind the settings and LLM client; the driver is opened lazily.
+
+        Args:
+            settings: Optional settings override.
+            llm: Optional shared :class:`LLMClient`.
+        """
         self.settings = settings or get_settings()
         self.llm = llm or LLMClient(self.settings)
         self.driver = None
 
     # ------------------------------------------------------------- connection
     def connect(self):
-        """Lazily open and verify the Neo4j driver, returning it."""
+        """Lazily open and verify the Neo4j driver.
+
+        Returns:
+            The connected Neo4j driver.
+        """
         if self.driver is None:
             self.driver = GraphDatabase.driver(
                 self.settings.neo4j_uri,
@@ -82,7 +97,15 @@ class GraphRAG:
         self.close()
 
     def _run(self, cypher: str, **params):
-        """Execute a Cypher statement and return the first result set."""
+        """Execute a Cypher statement and return the first result set.
+
+        Args:
+            cypher: The Cypher query to run.
+            **params: Named parameters bound into the query.
+
+        Returns:
+            The list of result records.
+        """
         return self.driver.execute_query(
             cypher, params, database_=self.settings.neo4j_database
         )[0]
@@ -136,7 +159,13 @@ class GraphRAG:
         force: bool = False,
         corpus_key: str | None = None,
     ) -> None:
-        """Build the graph for ``chunks``, skipping work when it already matches."""
+        """Build the graph for ``chunks``, skipping work when it already matches.
+
+        Args:
+            chunks: The corpus chunks to ingest.
+            force: Rebuild even if the graph already holds this corpus.
+            corpus_key: Optional label describing the corpus source.
+        """
         self.connect()
         fingerprint = corpus_fingerprint(chunks)
         stored = self.stored_fingerprint()
@@ -197,7 +226,12 @@ class GraphRAG:
             )
 
     def _write_chunks(self, chunks: list[Chunk], embeddings: np.ndarray) -> None:
-        """Merge chunks, their documents and embeddings into Neo4j."""
+        """Merge chunks, their documents and embeddings into Neo4j.
+
+        Args:
+            chunks: The chunks to write.
+            embeddings: The chunk embeddings, aligned with ``chunks``.
+        """
         rows = [
             {
                 "chunk_id": c.chunk_id,
@@ -222,7 +256,16 @@ class GraphRAG:
         logger.info("Wrote %d chunks + embeddings", len(rows))
 
     def _extract_all(self, chunks: list[Chunk], model: str) -> dict[str, Extraction]:
-        """Run entity/relationship extraction concurrently (I/O-bound API calls)."""
+        """Run entity/relationship extraction concurrently (I/O-bound API calls).
+
+        Args:
+            chunks: The chunks to extract from.
+            model: The extraction model name.
+
+        Returns:
+            A mapping from chunk id to its :class:`Extraction` (empty on
+            per-chunk failure).
+        """
         workers = max(1, self.settings.extraction_workers)
         results: dict[str, Extraction] = {}
         if workers == 1:
@@ -253,7 +296,11 @@ class GraphRAG:
         return results
 
     def _extract_and_write(self, chunks: list[Chunk]) -> None:
-        """Extract, merge and persist entities, relationships and mentions."""
+        """Extract, merge and persist entities, relationships and mentions.
+
+        Args:
+            chunks: The chunks to extract from and link into the graph.
+        """
         entities: dict[str, Entity] = {}
         descriptions: dict[str, list[str]] = defaultdict(list)
         relationships: dict[tuple[str, str], Relationship] = {}
@@ -356,13 +403,30 @@ class GraphRAG:
         entity_by_name: dict[str, Entity],
         relationships: list[Relationship],
     ) -> list[dict]:
-        """Summarise and embed each community, returning row dicts to persist."""
+        """Summarise and embed each community.
+
+        Args:
+            communities: Communities as lists of normalised entity names.
+            entity_by_name: Lookup from normalised name to :class:`Entity`.
+            relationships: All graph relationships.
+
+        Returns:
+            Row dicts (id, title, summary, size, embedding, members) ready to
+            persist as ``Community`` nodes.
+        """
         model = self.settings.extractor_model
         workers = max(1, self.settings.extraction_workers)
         indexed = [(i, members) for i, members in enumerate(communities) if members]
 
         def summarize(members: list[str]) -> str:
-            """Return the summary text for one community's member names."""
+            """Return the summary text for one community's member names.
+
+            Args:
+                members: Normalised names of the community's entities.
+
+            Returns:
+                The LLM-written summary text.
+            """
             return summarize_community(
                 self.llm, members, entity_by_name, relationships, model=model
             )
@@ -477,7 +541,16 @@ class GraphRAG:
 
     # -------------------------------------------------------------- retrieval
     def _vector_search_entities(self, question: str, k: int) -> list[dict]:
-        """Return the ``k`` entities most similar to the question."""
+        """Return the ``k`` entities most similar to the question.
+
+        Args:
+            question: The question to embed and match.
+            k: Maximum number of entities to return.
+
+        Returns:
+            Entity rows with ``name``, ``display``, ``description``, ``type``
+            and ``score``.
+        """
         emb = self.llm.embed_one(question).tolist()
         recs = self._run(
             f"""
@@ -492,7 +565,15 @@ class GraphRAG:
         return [dict(r) for r in recs]
 
     def _vector_search_chunks(self, question: str, k: int) -> list[dict]:
-        """Return the ``k`` chunks most similar to the question."""
+        """Return the ``k`` chunks most similar to the question.
+
+        Args:
+            question: The question to embed and match.
+            k: Maximum number of chunks to return.
+
+        Returns:
+            Chunk rows with ``chunk_id``, ``title``, ``text`` and ``score``.
+        """
         emb = self.llm.embed_one(question).tolist()
         recs = self._run(
             f"""
@@ -506,7 +587,16 @@ class GraphRAG:
         return [dict(r) for r in recs]
 
     def _vector_search_communities(self, question: str, k: int) -> list[dict]:
-        """Return the ``k`` community summaries most similar to the question."""
+        """Return the ``k`` community summaries most similar to the question.
+
+        Args:
+            question: The question to embed and match.
+            k: Maximum number of communities to return.
+
+        Returns:
+            Community rows with ``community_id``, ``title``, ``summary`` and
+            ``score``.
+        """
         emb = self.llm.embed_one(question).tolist()
         recs = self._run(
             f"""
@@ -521,7 +611,16 @@ class GraphRAG:
         return [dict(r) for r in recs]
 
     def _expand_entities(self, names: list[str], hops: int) -> tuple[list[dict], list[str]]:
-        """Return entity rows and relationship fact strings around the seeds."""
+        """Collect subgraph entities and relationship facts around seed names.
+
+        Args:
+            names: Normalised names of the seed entities.
+            hops: Number of ``RELATES_TO`` hops to expand.
+
+        Returns:
+            A ``(entities, facts)`` tuple, where ``entities`` are entity row
+            dicts and ``facts`` are human-readable relationship strings.
+        """
         if not names:
             return [], []
         hops = max(1, int(hops))
@@ -563,7 +662,15 @@ class GraphRAG:
         return list(entities.values()), facts
 
     def _chunks_for_entities(self, names: list[str], limit: int) -> list[dict]:
-        """Return chunk rows that mention any of the given entity names."""
+        """Return chunk rows that mention any of the given entity names.
+
+        Args:
+            names: Normalised entity names to look up.
+            limit: Maximum number of chunks to return.
+
+        Returns:
+            Chunk rows with ``chunk_id``, ``title`` and ``text``.
+        """
         if not names:
             return []
         recs = self._run(
@@ -579,7 +686,17 @@ class GraphRAG:
         return [dict(r) for r in recs]
 
     def retrieve(self, question: str, *, mode: str = "hybrid", k: int | None = None):
-        """Retrieve graph evidence and facts for ``question`` in the given mode."""
+        """Retrieve graph evidence and facts for ``question``.
+
+        Args:
+            question: The question to retrieve evidence for.
+            mode: Retrieval mode: ``local``, ``global`` or ``hybrid``.
+            k: Number of chunks to retrieve; defaults to ``settings.top_k``.
+
+        Returns:
+            A ``(items, facts)`` tuple of retrieval items and relationship
+            fact strings.
+        """
         k = k or self.settings.top_k
         items: list[RetrievalItem] = []
         facts: list[str] = []
@@ -659,7 +776,16 @@ class GraphRAG:
         return items, facts
 
     def answer(self, question: str, *, mode: str = "hybrid", k: int | None = None) -> RAGResult:
-        """Answer ``question`` from graph retrieval and return the result."""
+        """Answer ``question`` from graph retrieval.
+
+        Args:
+            question: The question to answer.
+            mode: Retrieval mode: ``local``, ``global`` or ``hybrid``.
+            k: Number of chunks to retrieve; defaults to ``settings.top_k``.
+
+        Returns:
+            The answer, retrieved evidence and usage stats.
+        """
         t0 = time.perf_counter()
         with self.llm.tracer.span(
             "graph_rag.answer", input=question, metadata={"mode": mode}

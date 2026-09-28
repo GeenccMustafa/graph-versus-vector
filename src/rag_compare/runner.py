@@ -20,7 +20,15 @@ logger = logging.getLogger(__name__)
 
 
 def load_chunks(source: str | None = None, settings: Settings | None = None):
-    """Load the dataset and split it into chunks for both pipelines."""
+    """Load the dataset and split it into chunks for both pipelines.
+
+    Args:
+        source: Corpus source; ``None`` uses the configured dataset.
+        settings: Optional settings override.
+
+    Returns:
+        A ``(settings, documents, examples, chunks)`` tuple.
+    """
     settings = settings or get_settings()
     documents, examples = load_dataset(settings, source=source)
     chunks = build_chunks(documents, settings.chunk_size, settings.chunk_overlap)
@@ -30,7 +38,17 @@ def load_chunks(source: str | None = None, settings: Settings | None = None):
 def build_all(
     source: str | None = None, *, force: bool = False, settings: Settings | None = None
 ) -> dict:
-    """Build the traditional index and the Neo4j graph."""
+    """Build the traditional index and the Neo4j knowledge graph.
+
+    Args:
+        source: Corpus source; ``None`` uses the configured dataset.
+        force: Rebuild from scratch instead of reusing caches.
+        settings: Optional settings override.
+
+    Returns:
+        A summary dict with document/question/chunk counts, graph counts and
+        the number of provider calls made.
+    """
     settings, documents, examples, chunks = load_chunks(source, settings)
     llm = LLMClient(settings)
 
@@ -61,7 +79,25 @@ def run_comparison(
     source: str | None = None,
     settings: Settings | None = None,
 ) -> dict:
-    """Run both pipelines over the examples and return a report dict."""
+    """Run both pipelines over the examples and build a comparison report.
+
+    Args:
+        limit: Maximum number of questions to evaluate.
+        mode: GraphRAG retrieval mode (``local``, ``global`` or ``hybrid``).
+        retrieval: Traditional RAG retrieval mode (``dense``, ``bm25`` or
+            ``hybrid``).
+        k: Number of chunks to retrieve per pipeline.
+        source: Corpus source; ``None`` uses the configured dataset.
+        settings: Optional settings override.
+
+    Returns:
+        A report dict with ``config``, aggregate ``results`` and
+        ``per_question`` records.
+
+    Raises:
+        ValueError: If there are no questions to evaluate.
+        RuntimeError: If the Neo4j graph is missing or holds another corpus.
+    """
     settings, _, examples, chunks = load_chunks(source, settings)
     if limit:
         examples = examples[:limit]
@@ -112,7 +148,15 @@ def run_comparison(
     graph.close()
 
     def delta(a: EvalSummary, b: EvalSummary) -> dict:
-        """Return metric-wise differences ``b - a`` excluding name and count."""
+        """Return metric-wise differences ``b - a`` excluding name and count.
+
+        Args:
+            a: The baseline summary.
+            b: The compared summary.
+
+        Returns:
+            A dict of rounded ``b - a`` deltas per metric.
+        """
         ad, bd = a.as_dict(), b.as_dict()
         return {key: round(bd[key] - ad[key], 4) for key in ad if key not in {"name", "n"}}
 
@@ -152,7 +196,25 @@ def run_deepeval(
     k: int | None = None,
     settings: Settings | None = None,
 ) -> dict:
-    """Run DeepEval LLM-as-judge metrics for both pipelines."""
+    """Run DeepEval LLM-as-judge metrics for both pipelines.
+
+    Args:
+        limit: Maximum number of questions to evaluate.
+        source: Corpus source; ``None`` uses the configured dataset.
+        both: Evaluate both pipelines, otherwise traditional RAG only.
+        metrics: Metric names to run; ``None`` uses the configured defaults.
+        retrieval: Traditional RAG retrieval mode (``dense``, ``bm25`` or
+            ``hybrid``).
+        k: Number of chunks to retrieve per pipeline.
+        settings: Optional settings override.
+
+    Returns:
+        The DeepEval summary and per-question records.
+
+    Raises:
+        ValueError: If there are no questions with gold answers.
+        RuntimeError: If the Neo4j graph is missing or holds another corpus.
+    """
     from .deepeval_eval import build_test_case, evaluate_test_cases
 
     settings, _, examples, chunks = load_chunks(source, settings)

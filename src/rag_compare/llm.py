@@ -31,7 +31,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ChatResult:
-    """The text and token usage returned by a chat completion."""
+    """The text and token usage returned by a chat completion.
+
+    Attributes:
+        text: The generated text.
+        prompt_tokens: Prompt tokens reported by the provider.
+        completion_tokens: Completion tokens reported by the provider.
+        cached: Whether the result was served from the disk cache.
+    """
 
     text: str
     prompt_tokens: int = 0
@@ -45,42 +52,94 @@ class ChatResult:
 
 
 def _hash(payload: Any) -> str:
-    """Return a stable SHA-256 hex digest of a JSON-serialisable payload."""
+    """Return a stable SHA-256 hex digest of a JSON-serialisable payload.
+
+    Args:
+        payload: Any JSON-serialisable object.
+
+    Returns:
+        The hex digest, stable across processes and key orderings.
+    """
     blob = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()
 
 
 class DiskCache:
-    """Tiny JSON/NumPy cache keyed by a content hash."""
+    """Tiny JSON/NumPy cache keyed by a content hash.
+
+    Attributes:
+        root: Root directory holding one subdirectory per cache kind.
+    """
 
     def __init__(self, root: Path):
-        """Create the cache rooted at ``root``, creating the directory if needed."""
+        """Create the cache rooted at ``root``, creating the directory if needed.
+
+        Args:
+            root: Root directory for cached entries.
+        """
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _path(self, kind: str, key: str) -> Path:
-        """Return (creating if needed) the cache file path for a key."""
+        """Return the cache file path for a key, creating its directory.
+
+        Args:
+            kind: The cache namespace, e.g. ``chat`` or ``embed``.
+            key: The content-hash key.
+
+        Returns:
+            The path to the JSON file for this entry.
+        """
         sub = self.root / kind
         sub.mkdir(parents=True, exist_ok=True)
         return sub / f"{key}.json"
 
     def get(self, kind: str, key: str):
-        """Return the cached JSON value for ``key``, or ``None`` on a miss."""
+        """Return the cached JSON value for ``key``, or ``None`` on a miss.
+
+        Args:
+            kind: The cache namespace.
+            key: The content-hash key.
+
+        Returns:
+            The deserialised value, or ``None`` if not cached.
+        """
         path = self._path(kind, key)
         if path.exists():
             return json.loads(path.read_text())
         return None
 
     def put(self, kind: str, key: str, value) -> None:
-        """Write ``value`` as JSON under the given cache kind and key."""
+        """Write ``value`` as JSON under the given cache kind and key.
+
+        Args:
+            kind: The cache namespace.
+            key: The content-hash key.
+            value: A JSON-serialisable value to store.
+        """
         self._path(kind, key).write_text(json.dumps(value))
 
 
 class LLMClient:
-    """Chat and embedding client for an OpenAI-compatible provider, with caching."""
+    """Chat and embedding client for an OpenAI-compatible provider, with caching.
+
+    Attributes:
+        settings: The resolved settings in use.
+        client: The underlying OpenAI-compatible client.
+        cache: The on-disk response cache.
+        tracer: The Langfuse tracer (a no-op when unconfigured).
+        call_count: Number of uncached provider calls made.
+    """
 
     def __init__(self, settings: Settings | None = None):
-        """Create the OpenAI-compatible client, cache and tracer."""
+        """Create the OpenAI-compatible client, cache and tracer.
+
+        Args:
+            settings: Optional settings override.
+
+        Raises:
+            RuntimeError: If ``DEEPINFRA_API_KEY`` is not configured.
+        """
         self.settings = settings or get_settings()
         if not self.settings.deepinfra_api_key:
             raise RuntimeError(
@@ -108,7 +167,18 @@ class LLMClient:
         max_tokens: int,
         json_mode: bool,
     ):
-        """Call the provider's chat endpoint with retries on failure."""
+        """Call the provider's chat endpoint with retries on failure.
+
+        Args:
+            model: The model to call.
+            messages: The chat messages.
+            temperature: Sampling temperature.
+            max_tokens: Maximum tokens to generate.
+            json_mode: Whether to request a JSON-object response format.
+
+        Returns:
+            The raw OpenAI-compatible completion object.
+        """
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -129,7 +199,19 @@ class LLMClient:
         json_mode: bool = False,
         cache: bool = True,
     ) -> ChatResult:
-        """Return a chat completion, serving from and writing to the disk cache."""
+        """Return a chat completion, serving from and writing to the disk cache.
+
+        Args:
+            messages: The chat messages.
+            model: Model override; defaults to ``settings.llm_model``.
+            temperature: Sampling temperature.
+            max_tokens: Maximum tokens to generate.
+            json_mode: Whether to request a JSON-object response format.
+            cache: Whether to read from and write to the disk cache.
+
+        Returns:
+            The generated text and token usage.
+        """
         model = model or self.settings.llm_model
         key = _hash(
             {
@@ -197,7 +279,16 @@ class LLMClient:
         batch_size: int = 32,
         cache: bool = True,
     ) -> np.ndarray:
-        """Return an (N, D) float32 array of L2-normalised embeddings."""
+        """Embed texts, serving from and writing to the disk cache.
+
+        Args:
+            texts: The texts to embed.
+            batch_size: Number of texts per provider request.
+            cache: Whether to read from and write to the disk cache.
+
+        Returns:
+            An ``(N, D)`` float32 array of L2-normalised embeddings.
+        """
         out: list[list[float] | None] = [None] * len(texts)
         pending: list[tuple[int, str]] = []
         keys: dict[int, str] = {}
@@ -240,7 +331,14 @@ class LLMClient:
         reraise=True,
     )
     def _embed_raw(self, texts: list[str]) -> list[list[float]]:
-        """Call the provider's embeddings endpoint with retries on failure."""
+        """Call the provider's embeddings endpoint with retries on failure.
+
+        Args:
+            texts: The batch of texts to embed.
+
+        Returns:
+            One embedding vector per input text.
+        """
         resp = self.client.embeddings.create(
             model=self.settings.embedding_model, input=texts
         )
@@ -248,7 +346,14 @@ class LLMClient:
         return [d.embedding for d in resp.data]
 
     def embed_one(self, text: str) -> np.ndarray:
-        """Return the embedding vector for a single string."""
+        """Return the embedding vector for a single string.
+
+        Args:
+            text: The text to embed.
+
+        Returns:
+            The L2-normalised embedding vector.
+        """
         return self.embed([text])[0]
 
     # ------------------------------------------------------------- json helper
@@ -260,7 +365,18 @@ class LLMClient:
         temperature: float = 0.0,
         max_tokens: int = 2048,
     ) -> tuple[Any, ChatResult]:
-        """Chat that must return JSON; repairs common wrapping issues."""
+        """Chat that must return JSON; repairs common wrapping issues.
+
+        Args:
+            messages: The chat messages.
+            model: Model override; defaults to ``settings.llm_model``.
+            temperature: Sampling temperature.
+            max_tokens: Maximum tokens to generate.
+
+        Returns:
+            A ``(parsed_json, chat_result)`` tuple; ``parsed_json`` is ``None``
+            when parsing fails.
+        """
         result = self.chat(
             messages,
             model=model,
@@ -272,7 +388,14 @@ class LLMClient:
 
 
 def _parse_json(text: str) -> Any:
-    """Parse JSON from model output, tolerating code fences and prose wrappers."""
+    """Parse JSON from model output, tolerating code fences and prose wrappers.
+
+    Args:
+        text: The raw model output.
+
+    Returns:
+        The parsed JSON value, or ``None`` if it cannot be parsed.
+    """
     text = text.strip()
     if text.startswith("```"):
         text = text.split("```", 2)[1]

@@ -26,7 +26,15 @@ logger = logging.getLogger(__name__)
 
 @task(name="build-pipelines", retries=1, retry_delay_seconds=15)
 def build_task(source: str | None = None, force: bool = False) -> dict:
-    """Prefect task that builds both retrieval pipelines."""
+    """Build both retrieval pipelines.
+
+    Args:
+        source: Corpus source; ``None`` uses the configured dataset.
+        force: Rebuild from scratch instead of reusing caches.
+
+    Returns:
+        The build summary produced by :func:`runner.build_all`.
+    """
     return build_all(source, force=force)
 
 
@@ -37,7 +45,18 @@ def compare_task(
     retrieval: str = "dense",
     source: str | None = None,
 ) -> dict:
-    """Prefect task that runs the custom-metrics comparison."""
+    """Run the custom-metrics comparison.
+
+    Args:
+        limit: Maximum number of questions to evaluate.
+        mode: GraphRAG retrieval mode (``local``, ``global`` or ``hybrid``).
+        retrieval: Traditional RAG retrieval mode (``dense``, ``bm25`` or
+            ``hybrid``).
+        source: Corpus source; ``None`` uses the configured dataset.
+
+    Returns:
+        The comparison report produced by :func:`runner.run_comparison`.
+    """
     return run_comparison(limit=limit, mode=mode, retrieval=retrieval, source=source)
 
 
@@ -48,13 +67,32 @@ def deepeval_task(
     both: bool = True,
     retrieval: str = "dense",
 ) -> dict:
-    """Prefect task that runs the DeepEval LLM-as-judge metrics."""
+    """Run the DeepEval LLM-as-judge metrics.
+
+    Args:
+        limit: Maximum number of questions to evaluate.
+        source: Corpus source; ``None`` uses the configured dataset.
+        both: Evaluate both pipelines, otherwise traditional RAG only.
+        retrieval: Traditional RAG retrieval mode (``dense``, ``bm25`` or
+            ``hybrid``).
+
+    Returns:
+        The DeepEval report produced by :func:`runner.run_deepeval`.
+    """
     return run_deepeval(limit=limit, source=source, both=both, retrieval=retrieval)
 
 
 @flow(name="rag-compare-build", log_prints=True)
 def build_flow(source: str | None = None, force: bool = False) -> dict:
-    """Build the traditional index and the Neo4j knowledge graph."""
+    """Build the traditional index and the Neo4j knowledge graph.
+
+    Args:
+        source: Corpus source; ``None`` uses the configured dataset.
+        force: Rebuild from scratch instead of reusing caches.
+
+    Returns:
+        The build summary.
+    """
     summary = build_task(source=source, force=force)
     print(f"Built {summary['chunks']} chunks; graph={summary['graph']}")
     return summary
@@ -67,7 +105,17 @@ def evaluate_flow(
     retrieval: str = "dense",
     source: str | None = None,
 ) -> dict:
-    """Run the head-to-head comparison and print the summary."""
+    """Run the head-to-head comparison and print the summary.
+
+    Args:
+        limit: Maximum number of questions to evaluate.
+        mode: GraphRAG retrieval mode.
+        retrieval: Traditional RAG retrieval mode.
+        source: Corpus source; ``None`` uses the configured dataset.
+
+    Returns:
+        The comparison report.
+    """
     report = compare_task(limit=limit, mode=mode, retrieval=retrieval, source=source)
     results = report["results"]
     print("Traditional RAG:", results["traditional_rag"])
@@ -82,7 +130,17 @@ def deepeval_flow(
     both: bool = True,
     retrieval: str = "dense",
 ) -> dict:
-    """Run DeepEval LLM-as-judge metrics."""
+    """Run DeepEval LLM-as-judge metrics.
+
+    Args:
+        limit: Maximum number of questions to evaluate.
+        source: Corpus source; ``None`` uses the configured dataset.
+        both: Evaluate both pipelines, otherwise traditional RAG only.
+        retrieval: Traditional RAG retrieval mode.
+
+    Returns:
+        The DeepEval report.
+    """
     result = deepeval_task(limit=limit, source=source, both=both, retrieval=retrieval)
     print("DeepEval summary:", result["summary"])
     return result
@@ -96,7 +154,18 @@ def full_flow(
     retrieval: str = "dense",
     force: bool = False,
 ) -> dict:
-    """Build both pipelines, then evaluate them (the default end-to-end flow)."""
+    """Build both pipelines, then evaluate them (the default end-to-end flow).
+
+    Args:
+        source: Corpus source; ``None`` uses the configured dataset.
+        limit: Maximum number of questions to evaluate.
+        mode: GraphRAG retrieval mode.
+        retrieval: Traditional RAG retrieval mode.
+        force: Rebuild from scratch instead of reusing caches.
+
+    Returns:
+        A dict with ``build`` and ``evaluation`` sub-reports.
+    """
     build_summary = build_task(source=source, force=force)
     report = compare_task(limit=limit, mode=mode, retrieval=retrieval, source=source)
     return {"build": build_summary, "evaluation": report}

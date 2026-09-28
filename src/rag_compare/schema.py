@@ -15,7 +15,15 @@ ANSWER_SYSTEM = (
 
 @dataclass
 class RetrievalItem:
-    """One retrieved piece of evidence (chunk), regardless of pipeline."""
+    """One retrieved piece of evidence, regardless of pipeline.
+
+    Attributes:
+        id: Stable identifier of the item (chunk id, entity name, ...).
+        text: The text shown to the answering model.
+        score: Retrieval score (larger is more relevant).
+        source: Human-readable origin, usually a document title.
+        kind: Provenance tag, e.g. ``chunk``, ``relation`` or ``community``.
+    """
 
     id: str
     text: str
@@ -26,7 +34,17 @@ class RetrievalItem:
 
 @dataclass
 class RAGResult:
-    """The answer, retrieved evidence and usage stats for one question."""
+    """The answer, retrieved evidence and usage stats for one question.
+
+    Attributes:
+        question: The question that was answered.
+        answer: The model's answer string.
+        retrieval: The evidence items passed to the model, in prompt order.
+        latency_s: End-to-end answer latency in seconds.
+        prompt_tokens: Prompt tokens reported by the provider.
+        completion_tokens: Completion tokens reported by the provider.
+        graph_facts: Human-readable relationship facts (GraphRAG only).
+    """
 
     question: str
     answer: str
@@ -49,7 +67,15 @@ class RAGResult:
 
 
 def build_answer_messages(question: str, context: str) -> list[dict[str, str]]:
-    """Build the chat messages that answer ``question`` from ``context``."""
+    """Build the chat messages that answer ``question`` from ``context``.
+
+    Args:
+        question: The user question to answer.
+        context: Concatenated retrieved evidence to ground the answer.
+
+    Returns:
+        A two-message list (``system`` + ``user``) for the chat completion API.
+    """
     user = (
         f"Context:\n{context}\n\n"
         f"Question: {question}\n\n"

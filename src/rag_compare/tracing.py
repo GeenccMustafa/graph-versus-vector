@@ -20,7 +20,15 @@ logger = logging.getLogger(__name__)
 
 
 def langfuse_reachable(host: str, timeout: float = 2.0) -> bool:
-    """Return whether a Langfuse server answers its health endpoint at ``host``."""
+    """Return whether a Langfuse server answers its health endpoint at ``host``.
+
+    Args:
+        host: Base URL of the Langfuse server.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        ``True`` if the health endpoint responds with a non-5xx status.
+    """
     if not host:
         return False
     try:
@@ -33,10 +41,19 @@ def langfuse_reachable(host: str, timeout: float = 2.0) -> bool:
 
 
 class Tracer:
-    """Langfuse tracing facade that degrades to no-ops when unconfigured."""
+    """Langfuse tracing facade that degrades to no-ops when unconfigured.
+
+    Attributes:
+        settings: The resolved settings in use.
+        client: The Langfuse client, or ``None`` when tracing is disabled.
+    """
 
     def __init__(self, settings: Settings | None = None):
-        """Initialise the client if tracing is enabled and the host is reachable."""
+        """Initialise the client if tracing is enabled and the host is reachable.
+
+        Args:
+            settings: Optional settings override.
+        """
         self.settings = settings or get_settings()
         self.client = None
         if not self.settings.tracing_enabled:
@@ -73,7 +90,15 @@ class Tracer:
 
     @contextmanager
     def span(self, name: str, **kwargs: Any) -> Iterator[Any]:
-        """Yield a Langfuse span context, or ``None`` when tracing is off."""
+        """Yield a Langfuse span context, or ``None`` when tracing is off.
+
+        Args:
+            name: Span name.
+            **kwargs: Extra attributes forwarded to Langfuse.
+
+        Yields:
+            The observation object, or ``None`` when tracing is disabled.
+        """
         if self.client is None:
             yield None
             return
@@ -90,7 +115,17 @@ class Tracer:
     def generation(
         self, name: str, *, model: str, input: Any = None, **kwargs: Any
     ) -> Iterator[Any]:
-        """Yield a Langfuse generation context, or ``None`` when tracing is off."""
+        """Yield a Langfuse generation context, or ``None`` when tracing is off.
+
+        Args:
+            name: Generation name.
+            model: Model name recorded on the generation.
+            input: Input payload (e.g. the chat messages).
+            **kwargs: Extra attributes forwarded to Langfuse.
+
+        Yields:
+            The observation object, or ``None`` when tracing is disabled.
+        """
         if self.client is None:
             yield None
             return
@@ -105,7 +140,17 @@ class Tracer:
 
     @contextmanager
     def embedding(self, name: str, *, model: str, input: Any = None, **kwargs: Any) -> Iterator[Any]:
-        """Yield a Langfuse embedding context, or ``None`` when tracing is off."""
+        """Yield a Langfuse embedding context, or ``None`` when tracing is off.
+
+        Args:
+            name: Embedding observation name.
+            model: Embedding model name recorded on the observation.
+            input: Input payload (e.g. the batch of texts).
+            **kwargs: Extra attributes forwarded to Langfuse.
+
+        Yields:
+            The observation object, or ``None`` when tracing is disabled.
+        """
         if self.client is None:
             yield None
             return
@@ -119,7 +164,12 @@ class Tracer:
             yield None
 
     def update(self, obs: Any, **kwargs: Any) -> None:
-        """Update a span/generation observation, ignoring no-op observers."""
+        """Update a span/generation observation, ignoring no-op observers.
+
+        Args:
+            obs: The observation to update (``None`` is ignored).
+            **kwargs: Fields to set on the observation.
+        """
         if obs is None:
             return
         try:
@@ -128,7 +178,13 @@ class Tracer:
             logger.debug("Langfuse update error: %s", exc)
 
     def score_current(self, name: str, value: float, comment: str | None = None) -> None:
-        """Attach a numeric score to the current trace."""
+        """Attach a numeric score to the current trace.
+
+        Args:
+            name: Score name.
+            value: Numeric score value.
+            comment: Optional free-text comment.
+        """
         if self.client is None:
             return
         try:
@@ -150,7 +206,14 @@ _tracer: Tracer | None = None
 
 
 def get_tracer(settings: Settings | None = None) -> Tracer:
-    """Return the process-wide singleton :class:`Tracer`."""
+    """Return the process-wide singleton :class:`Tracer`.
+
+    Args:
+        settings: Settings used only on first construction.
+
+    Returns:
+        The shared tracer instance.
+    """
     global _tracer
     if _tracer is None:
         _tracer = Tracer(settings)

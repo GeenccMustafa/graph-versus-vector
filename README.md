@@ -50,47 +50,105 @@ shows exactly this: GraphRAG raises supporting-fact recall from **0.81 → 0.98*
 
 ## Architecture
 
+Both pipelines share the same front half (load → chunk) and the same back half
+(answer with an LLM, then score the result). They differ only in how they turn a
+question into evidence: **Traditional RAG** retrieves text directly, while
+**GraphRAG** retrieves over a knowledge graph of entities and relationships.
+Everything else is held constant so the comparison is fair.
+
+### Layers
+
+1. **Ingestion** — `data.py` loads the benchmark (HotpotQA) or your own markdown,
+   and `text.py` splits documents into sentence-aware, overlapping chunks.
+2. **Retrieval** — the two competing pipelines (see below).
+3. **Answering** — one shared prompt and chat model turn retrieved evidence into
+   a short answer (`schema.py`, `llm.py`).
+4. **Cross-cutting** — a single `LLMClient` (on-disk cache + Langfuse hooks),
+   `evaluation.py` / `deepeval_eval.py` for scoring, and `runner.py` + `flows.py`
+   that let the CLI and Prefect run exactly the same code.
+
+### Request lifecycle
+
 ```
-                         ┌──────────────────────────┐
-        corpus ─────────▶│  chunking (sentence-aware)│
-                         └────────────┬─────────────┘
-                                      │
-                ┌─────────────────────┴─────────────────────┐
-                ▼                                           ▼
-      ┌──────────────────┐                        ┌──────────────────────┐
-      │ Traditional RAG  │                        │      GraphRAG        │
-      │  embed chunks    │                        │ embed chunks         │
-      │  + BM25 index    │                        │ LLM entity/rel       │
-      │  dense / BM25 /  │                        │ extraction           │
-      │  hybrid (RRF)    │                        │ Neo4j graph +        │
-      └────────┬─────────┘                        │ vector indexes       │
-               │                                  │ community detection  │
-               │                                  │ + LLM summaries      │
-               │                                  └──────────┬───────────┘
-               │                                             │
-               └──────────────► answer via LLM ◄─────────────┘
-                                      │
-                        ┌─────────────┴─────────────┐
-                        │ Langfuse traces           │
-                        │ DeepEval judges           │
-                        │ Prefect orchestrates      │
-                        └───────────────────────────┘
+                        ┌─────────────────────────────────┐
+   corpus ────────────▶ │ load + chunk (sentence-aware)   │
+                        └────────────────┬────────────────┘
+                                        │  Chunk[]
+                ┌───────────────────────┴───────────────────────┐
+                ▼                                               ▼
+   ┌───────────────────────────┐                   ┌───────────────────────────┐
+   │    Traditional RAG        │                   │         GraphRAG          │
+   │                           │                   │                           │
+   │ BUILD                     │                   │ BUILD                     │
+   │  • embed chunks           │                   │  • embed chunks           │
+   │  • BM25 index (in-mem)    │                   │  • LLM entity/rel extract │
+   │                           │                   │  • write Neo4j triples    │
+   │ QUERY                     │                   │  • detect + summarise     │
+   │  • dense | BM25 | RRF     │                   │    communities            │
+   │  • fuse rankings (k=60)   │                   │                           │
+   │                           │                   │ QUERY                     │
+   │                           │                   │  • local | global | hybrid│
+   └─────────────┬─────────────┘                   └─────────────┬─────────────┘
+                │                                               │
+                └───────────────────────┬───────────────────────┘
+                                        ▼
+                        ┌─────────────────────────────────┐
+                        │ answer with LLM (same prompt)   │
+                        └────────────────┬────────────────┘
+                                        ▼
+                        ┌─────────────────────────────────┐
+                        │ evaluate: EM / F1 / support     │
+                        │ recall; DeepEval judges         │
+                        │ (Langfuse traces every call)    │
+                        └─────────────────────────────────┘
 ```
 
-**GraphRAG retrieval modes** (`--mode`):
+### Phase 1 — build (offline, once per corpus)
 
-- `local` — vector-seed the top entities, expand `GRAPH_HOPS` hops, collect
-  related entity descriptions + relationship facts + linked chunks.
-- `global` — vector-match LLM-written community summaries (thematic questions).
-- `hybrid` (default) — both.
+Both pipelines persist their indexes so repeated runs are cheap and can run
+offline:
+
+- **Traditional RAG** embeds every chunk and stores the matrix under
+  `.cache/traditional_rag/<corpus-fingerprint>/`. The BM25 index is rebuilt in
+  memory from that stored chunk metadata, so no extra artifacts are written.
+- **GraphRAG** additionally runs LLM entity/relationship extraction per chunk,
+  merges the results, and writes a graph to **Neo4j**: `Document`, `Chunk`,
+  `Entity` and `Community` nodes, with `PART_OF`, `MENTIONS`, `RELATES_TO` and
+  `IN_COMMUNITY` edges. Communities are detected with networkx and summarised by
+  the LLM (used by global search).
+- Both are keyed by a **corpus fingerprint** (`text.corpus_fingerprint`), so
+  switching corpora never silently reuses a stale index. The Neo4j graph also
+  stores a `Corpus` marker node and rebuilds itself when the corpus changes.
+
+### Phase 2 — query (per question)
+
+Each pipeline turns a question into a list of `RetrievalItem`s, which the
+**same** prompt and chat model then turn into an answer.
 
 **Traditional RAG retrieval modes** (`--retrieval`):
 
-- `dense` (default) — cosine top-`k` over embeddings.
+- `dense` (default) — cosine top-`k` over the embedding matrix.
 - `bm25` — lexical top-`k` over exact term overlap (strong on rare tokens and
   proper nouns).
 - `hybrid` — fuse dense and BM25 rankings with reciprocal rank fusion
   (`RRF_K = 60`).
+
+**GraphRAG retrieval modes** (`--mode`):
+
+- `local` — vector-seed the top entities, expand `GRAPH_HOPS` hops, and collect
+  relationship facts plus the chunks that mention those entities.
+- `global` — vector-match LLM-written community summaries (thematic questions).
+- `hybrid` (default) — both.
+
+### Where state lives
+
+| Location | What it holds |
+|----------|----------------|
+| Neo4j | The GraphRAG knowledge graph (chunks, entities, relationships, communities) |
+| `.cache/traditional_rag/<fingerprint>/` | Dense embeddings + chunk metadata |
+| `.cache/llm/` | Raw chat/embedding responses (content-hash keyed) |
+| `data/` | The cached benchmark and your own documents |
+| `results/` | JSON evaluation reports |
 
 ---
 
