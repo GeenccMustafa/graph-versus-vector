@@ -103,7 +103,9 @@ class DeepInfraJudge(DeepEvalBaseLLM):
             try:
                 return schema.model_validate_json(text)
             except Exception as exc:  # pragma: no cover
-                raise ValueError(f"Judge could not produce valid schema output: {exc}")
+                raise ValueError(
+                    f"Judge could not produce valid schema output: {exc}"
+                ) from exc
         return self.llm.chat(
             [{"role": "user", "content": prompt}], max_tokens=1024
         ).text

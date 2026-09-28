@@ -12,6 +12,8 @@
 #   make graph       # inspect Neo4j
 #   make neo4j       # start Neo4j via Homebrew
 #   make ui          # start the Prefect UI
+#   make check       # lint + type-check + tests
+#   make test        # tests only
 #
 # For your own markdown, put files in data/ then:
 #   make build SOURCE=files && make ask Q="..." SOURCE=files
@@ -22,7 +24,7 @@ SOURCE_ARG := $(if $(SOURCE),--source $(SOURCE),)
 RETRIEVAL ?= dense
 Q ?= What is this about?
 
-.PHONY: up down install reinstall fix-pth config download build ask evaluate deepeval graph flow neo4j langfuse langfuse-down ui deps
+.PHONY: up down install reinstall fix-pth config download build ask evaluate deepeval graph flow neo4j langfuse langfuse-down ui deps test lint check
 
 up:
 	bash scripts/start_all.sh
@@ -78,3 +80,13 @@ langfuse-down:
 
 ui:
 	uv run --no-sync prefect server start
+
+test:
+	uv run --no-sync pytest
+
+lint:
+	uv run --no-sync ruff check src tests
+	uv run --no-sync pydocstyle src/rag_compare tests
+	uv run --no-sync mypy src/rag_compare
+
+check: lint test

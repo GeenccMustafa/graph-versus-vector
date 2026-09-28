@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import logging
 import time
-from pathlib import Path
 
 from .bm25_index import BM25Index, SparseHit
 from .config import Settings, get_settings
@@ -149,9 +148,14 @@ class TraditionalRAG:
             The top-``k`` items by summed reciprocal rank.
         """
         fused: dict[int, float] = {}
-        for hits in (self._dense_hits(question, k), self._sparse_hits(question, k)):
-            for rank, hit in enumerate(hits):
-                fused[hit.index] = fused.get(hit.index, 0.0) + 1.0 / (RRF_K + rank + 1)
+        for dense_rank, dense_hit in enumerate(self._dense_hits(question, k)):
+            fused[dense_hit.index] = fused.get(dense_hit.index, 0.0) + 1.0 / (
+                RRF_K + dense_rank + 1
+            )
+        for sparse_rank, sparse_hit in enumerate(self._sparse_hits(question, k)):
+            fused[sparse_hit.index] = fused.get(sparse_hit.index, 0.0) + 1.0 / (
+                RRF_K + sparse_rank + 1
+            )
         order = sorted(fused, key=lambda i: fused[i], reverse=True)[:k]
         return [self._item(self.index.meta[i], fused[i]) for i in order]
 

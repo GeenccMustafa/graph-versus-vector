@@ -7,7 +7,7 @@ Persisted to disk so we do not re-embed the corpus on every run.
 from __future__ import annotations
 
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -83,6 +83,7 @@ class VectorIndex:
         Args:
             directory: Target directory; created if it does not exist.
         """
+        assert self.matrix is not None
         directory.mkdir(parents=True, exist_ok=True)
         np.save(directory / "embeddings.npy", self.matrix)
         (directory / "meta.json").write_text(json.dumps(self.meta))

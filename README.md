@@ -33,7 +33,8 @@ markdown files into `data/` and run both pipelines over them — see
 11. [Metrics explained](#metrics-explained)
 12. [Results](#results)
 13. [Cost](#cost)
-14. [Troubleshooting](#troubleshooting)
+14. [Development & testing](#development--testing)
+15. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -519,7 +520,10 @@ behaviour is identical either way.
 
 | Path | What it is |
 |------|------------|
-| `pyproject.toml` | Project metadata, dependencies (added via `uv add`), console script `rag-compare` |
+| `pyproject.toml` | Project metadata, dependencies (added via `uv add`), console script `rag-compare`, tool config (ruff/pytest/mypy) |
+| `tests/` | Offline pytest suite (fake LLM/tracer, no network needed) |
+| `LICENSE` | MIT license |
+| `.github/workflows/ci.yml` | CI: ruff + pydocstyle + mypy + pytest on push/PR |
 | `.env` / `.env.example` | All configuration (API keys, Neo4j, models, integrations) |
 | `Makefile` | Convenience targets (`install`, `build`, `ask`, `evaluate`, …) |
 | `docker-compose.yml` | Neo4j container (alternative to Homebrew) |
@@ -635,6 +639,28 @@ DeepInfra standard tier. Indexing is a one-time cost and fully cached.
 
 Embeddings (`BAAI/bge-m3`) are negligible. Re-running `evaluate` only pays for
 answer generation (or nothing, thanks to the cache).
+
+---
+
+## Development & testing
+
+The suite is fully offline: it uses fake LLM/tracer objects, so no API key, Neo4j
+instance, or network access is required.
+
+```bash
+make check        # ruff + pydocstyle + mypy + pytest
+make test         # pytest only
+make lint         # ruff + pydocstyle + mypy
+```
+
+- **Tests** live in `tests/` and cover the pure logic: evaluation metrics,
+  sentence-aware chunking, corpus fingerprints, the BM25 index, RRF fusion, and
+  the local-file loader.
+- **Tooling** (configured in `pyproject.toml`): `ruff` for linting (E/F/I/W/B),
+  `pydocstyle` for PEP 257/Google docstrings, `mypy` for types, `pytest` for
+  tests. Install them with `make install` (or `uv sync`).
+- **CI** (`.github/workflows/ci.yml`) runs the same checks on every push and PR.
+- **License**: MIT — see `LICENSE`.
 
 ---
 

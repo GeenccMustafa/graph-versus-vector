@@ -95,7 +95,7 @@ def _fetch_rows(
     Raises:
         RuntimeError: If the API returns an error payload.
     """
-    params = {
+    params: dict[str, str | int] = {
         "dataset": dataset,
         "config": config,
         "split": split,

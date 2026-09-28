@@ -23,7 +23,7 @@ from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
-from neo4j import GraphDatabase
+from neo4j import Driver, GraphDatabase
 from rich.progress import track
 
 from .communities import detect_communities, summarize_community
@@ -64,7 +64,7 @@ class GraphRAG:
         """
         self.settings = settings or get_settings()
         self.llm = llm or LLMClient(self.settings)
-        self.driver = None
+        self.driver: Driver | None = None
 
     # ------------------------------------------------------------- connection
     def connect(self):
@@ -106,6 +106,7 @@ class GraphRAG:
         Returns:
             The list of result records.
         """
+        assert self.driver is not None
         return self.driver.execute_query(
             cypher, params, database_=self.settings.neo4j_database
         )[0]
